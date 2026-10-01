@@ -62,6 +62,20 @@ const runTests = async () => {
     const candidateToken = r2.data.token;
     const candidateId = r2.data.user._id;
 
+    // 2.5 Test Concurrent Login Prevention
+    console.log('\n[2.5] Test Concurrent Login Prevention from second window');
+    const rConcurrent = await req('/api/auth/login', {
+      method: 'POST',
+      body: {
+        email: 'test_recruiter@voicehire.com',
+        password: 'password123'
+      }
+    });
+    console.log('Concurrent login attempt result:', rConcurrent.status, rConcurrent.data.error);
+    if (rConcurrent.status !== 409 || !rConcurrent.data.error?.includes('currently active in another window')) {
+      throw new Error('Concurrent session bug: Server allowed simultaneous login from second window');
+    }
+
     // 3. Test Cross-Role Security Checks
     console.log('\n[3] Test Cross-Role Security Isolation');
     const rCross1 = await req('/api/candidates', {

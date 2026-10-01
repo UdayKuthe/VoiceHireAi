@@ -7,7 +7,8 @@
     "scripts": {
         "start": "node src/server.js",
         "dev": "nodemon src/server.js",
-        "test:phase1": "node test_phase1.js"
+        "test:phase1": "node test_phase1.js",
+        "db:view": "node scripts/view_db.js"
     },
     "dependencies": {
         "@deepgram/sdk": "^5.13.0",

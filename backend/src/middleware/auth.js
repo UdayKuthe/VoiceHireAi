@@ -36,12 +36,31 @@ export const authenticate = async (req, res, next) => {
       });
     }
 
-    const user = await User.findById(decoded.id);
+    const user = await User.findById(decoded.id).select('+activeSessionToken');
     if (!user) {
       return res.status(401).json({
         success: false,
         error: 'User account not found or has been removed.'
       });
+    }
+
+    // Invalidate sessions terminated by server restart or previous sign out
+    if (!user.isLoggedIn || user.activeSessionToken !== token) {
+      return res.status(401).json({
+        success: false,
+        error: 'Session expired or invalidated by server restart. Please log in again.'
+      });
+    }
+
+    // Refresh lastActiveAt periodically (at most once every 15s to keep overhead minimal)
+    const now = Date.now();
+    const lastActive = user.lastActiveAt ? new Date(user.lastActiveAt).getTime() : 0;
+    if (now - lastActive > 15000) {
+      User.updateOne(
+        { _id: user._id },
+        { lastActiveAt: new Date(now) }
+      ).catch(() => {});
+      user.lastActiveAt = new Date(now);
     }
 
     req.user = user;

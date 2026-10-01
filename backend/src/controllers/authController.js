@@ -28,12 +28,26 @@ export const login = async (req, res, next) => {
   }
 };
 
-export const logout = async (req, res) => {
-  // Stateless JWT: client removes token from storage
-  res.status(200).json({
-    success: true,
-    message: 'Logged out successfully.'
-  });
+export const logout = async (req, res, next) => {
+  try {
+    let userId = req.user?._id;
+    if (!userId && req.headers.authorization?.startsWith('Bearer ')) {
+      const token = req.headers.authorization.split(' ')[1];
+      try {
+        const jwtModule = await import('jsonwebtoken');
+        const decoded = jwtModule.default.decode(token);
+        if (decoded?.id) userId = decoded.id;
+      } catch {}
+    }
+
+    const result = await AuthService.logout(userId);
+    res.status(200).json({
+      success: true,
+      message: result.message
+    });
+  } catch (error) {
+    next(error);
+  }
 };
 
 export const forgotPassword = async (req, res, next) => {

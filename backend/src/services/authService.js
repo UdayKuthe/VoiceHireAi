@@ -47,14 +47,25 @@ export class AuthService {
     const salt = await bcrypt.genSalt(10);
     const passwordHash = await bcrypt.hash(password, salt);
 
+    const tokenPayload = {
+      _id: new (await import('mongoose')).default.Types.ObjectId(),
+      email: normalizedEmail,
+      role
+    };
+
+    const token = this.generateToken({ _id: tokenPayload._id, email: normalizedEmail, role });
+
     const user = await User.create({
+      _id: tokenPayload._id,
       name: name.trim(),
       email: normalizedEmail,
       passwordHash,
-      role
+      role,
+      isLoggedIn: true,
+      activeSessionToken: token,
+      lastActiveAt: new Date()
     });
 
-    const token = this.generateToken(user);
     return { token, user: user.toJSON() };
   }
 
@@ -66,7 +77,7 @@ export class AuthService {
     }
 
     const normalizedEmail = email.toLowerCase().trim();
-    const user = await User.findOne({ email: normalizedEmail }).select('+passwordHash');
+    const user = await User.findOne({ email: normalizedEmail }).select('+passwordHash +activeSessionToken');
     if (!user) {
       const error = new Error('Invalid email or password.');
       error.statusCode = 401;
@@ -80,8 +91,37 @@ export class AuthService {
       throw error;
     }
 
+    // Check for concurrent active session in another window
+    const SESSION_INACTIVITY_TIMEOUT_MS = 2 * 60 * 1000; // 2 minutes
+    if (user.isLoggedIn && user.lastActiveAt) {
+      const timeSinceLastActive = Date.now() - new Date(user.lastActiveAt).getTime();
+      if (timeSinceLastActive < SESSION_INACTIVITY_TIMEOUT_MS) {
+        const error = new Error(
+          'This account is currently active in another window or session. Please sign out from that session first.'
+        );
+        error.statusCode = 409;
+        throw error;
+      }
+    }
+
     const token = this.generateToken(user);
+    user.isLoggedIn = true;
+    user.lastActiveAt = new Date();
+    user.activeSessionToken = token;
+    await user.save();
+
     return { token, user: user.toJSON() };
+  }
+
+  static async logout(userId) {
+    if (userId) {
+      await User.findByIdAndUpdate(userId, {
+        isLoggedIn: false,
+        activeSessionToken: null,
+        lastActiveAt: null
+      });
+    }
+    return { message: 'Logged out successfully.' };
   }
 
   static async forgotPassword(email) {
@@ -145,6 +185,9 @@ export class AuthService {
     user.passwordHash = await bcrypt.hash(newPassword, salt);
     user.resetToken = undefined;
     user.resetTokenExpiry = undefined;
+    user.isLoggedIn = false;
+    user.activeSessionToken = null;
+    user.lastActiveAt = null;
     await user.save();
 
     return {

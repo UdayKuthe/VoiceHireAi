@@ -37,6 +37,18 @@ const userSchema = new mongoose.Schema(
     resetTokenExpiry: {
       type: Date,
       select: false
+    },
+    activeSessionToken: {
+      type: String,
+      select: false
+    },
+    isLoggedIn: {
+      type: Boolean,
+      default: false
+    },
+    lastActiveAt: {
+      type: Date,
+      default: null
     }
   },
   {
@@ -55,6 +67,7 @@ userSchema.set('toJSON', {
     delete ret.passwordHash;
     delete ret.resetToken;
     delete ret.resetTokenExpiry;
+    delete ret.activeSessionToken;
     delete ret.__v;
     return ret;
   }
@@ -65,6 +78,7 @@ userSchema.set('toObject', {
     delete ret.passwordHash;
     delete ret.resetToken;
     delete ret.resetTokenExpiry;
+    delete ret.activeSessionToken;
     delete ret.__v;
     return ret;
   }

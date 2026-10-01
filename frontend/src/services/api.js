@@ -31,6 +31,11 @@ async function request(endpoint, options = {}) {
   }
 
   if (!response.ok) {
+    if (response.status === 401 && !endpoint.includes('/auth/login')) {
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('voicehire:unauthorized'));
+      }
+    }
     const errorMsg = data.error || data.message || `Request failed with status ${response.status}`;
     const err = new Error(errorMsg);
     err.status = response.status;

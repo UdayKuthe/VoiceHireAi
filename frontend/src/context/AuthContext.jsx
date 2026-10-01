@@ -9,6 +9,17 @@ export const AuthProvider = ({ children }) => {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    const handleUnauthorized = () => {
+      localStorage.removeItem('voicehire_token');
+      setToken(null);
+      setUser(null);
+    };
+
+    window.addEventListener('voicehire:unauthorized', handleUnauthorized);
+    return () => window.removeEventListener('voicehire:unauthorized', handleUnauthorized);
+  }, []);
+
+  useEffect(() => {
     const initializeAuth = async () => {
       const storedToken = localStorage.getItem('voicehire_token');
       if (storedToken) {
