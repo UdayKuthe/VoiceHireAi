@@ -8,6 +8,8 @@
         "start": "node src/server.js",
         "dev": "nodemon src/server.js",
         "test:phase1": "node test_phase1.js",
+        "test:phase2": "node test_phase2.js",
+        "test:gemini": "node test_gemini_api.js",
         "db:view": "node scripts/view_db.js"
     },
     "dependencies": {
@@ -22,6 +24,7 @@
         "livekit-server-sdk": "^2.19.1",
         "mongoose": "^9.10.3",
         "multer": "^2.4.0",
+        "pdf-parse": "^2.4.5",
         "zod": "^4.6.5"
     },
     "devDependencies": {

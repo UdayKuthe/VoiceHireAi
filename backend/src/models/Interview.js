@@ -48,6 +48,21 @@ const interviewSchema = new mongoose.Schema(
     candidateReady: {
       type: Boolean,
       default: false
+    },
+    resumeId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Resume',
+      default: null
+    },
+    jdId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'JobDescription',
+      default: null
+    },
+    analysisStatus: {
+      type: String,
+      enum: ['none', 'extracting', 'mapped', 'planned', 'failed'],
+      default: 'none'
     }
   },
   {

@@ -9,6 +9,7 @@ import ResetPasswordPage from './pages/ResetPasswordPage.jsx';
 import RecruiterDashboard from './pages/RecruiterDashboard.jsx';
 import CandidateDashboard from './pages/CandidateDashboard.jsx';
 import InterviewRoomPage from './pages/InterviewRoomPage.jsx';
+import InterviewDetailPage from './pages/InterviewDetailPage.jsx';
 
 // Root redirector based on authenticated user's role
 const RootRedirect = () => {
@@ -45,6 +46,14 @@ export function App() {
           <Route path="/reset-password" element={<ResetPasswordPage />} />
 
           {/* Protected Recruiter Routes */}
+          <Route
+            path="/recruiter/interviews/:id"
+            element={
+              <ProtectedRoute requiredRole="RECRUITER">
+                <InterviewDetailPage />
+              </ProtectedRoute>
+            }
+          />
           <Route
             path="/recruiter/*"
             element={

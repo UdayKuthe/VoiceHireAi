@@ -27,6 +27,7 @@ uploads/jds/*
 !uploads/jds/.gitkeep
 *.tmp
 *.temp
+data/
 
 # Logs
 logs/

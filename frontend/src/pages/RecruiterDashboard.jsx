@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import { Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext.jsx';
 import { api } from '../services/api.js';
 import StatusBadge from '../components/StatusBadge.jsx';
@@ -16,7 +17,8 @@ import {
   Sparkles,
   CalendarDays,
   User,
-  RefreshCw
+  RefreshCw,
+  FileText
 } from 'lucide-react';
 
 export const RecruiterDashboard = () => {
@@ -378,6 +380,15 @@ export const RecruiterDashboard = () => {
 
                       {/* Right: Actions */}
                       <div className="flex items-center flex-wrap gap-2.5">
+                        {/* Phase 2: Analyze & Plan */}
+                        <Link
+                          to={`/recruiter/interviews/${interview._id}`}
+                          className="py-2 px-3.5 rounded-xl bg-indigo-600/15 hover:bg-indigo-600/25 border border-indigo-500/40 text-indigo-300 hover:text-white text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer"
+                        >
+                          <FileText className="w-3.5 h-3.5 text-indigo-400" />
+                          <span>Analyze & Plan</span>
+                        </Link>
+
                         {/* Ready / Unready toggle */}
                         {!['completed', 'cancelled'].includes(interview.status) && (
                           <button
