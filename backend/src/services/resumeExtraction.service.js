@@ -5,6 +5,7 @@ import { resumeDataSchema } from '../schemas/resume.schema.js';
 import { Resume } from '../models/Resume.js';
 import { Interview } from '../models/Interview.js';
 import { PdfParserService } from './pdfParser.service.js';
+import { ExperienceService } from './experience.service.js';
 
 export class ResumeExtractionService {
   static async extractResume({ interviewId, candidateId, filePath, fileName }) {
@@ -47,7 +48,15 @@ export class ResumeExtractionService {
         );
       }
 
-      console.log('[ResumeExtraction] Extraction complete — candidate:', extractedData?.candidate?.name, ', skills:', extractedData?.skills?.length, ', claims:', extractedData?.claims?.length);
+      // Compute server-side derived experience summary and durationMonths
+      const { enrichedRoles, experienceSummary } = ExperienceService.computeExperienceSummary({
+        roles: extractedData.experience || [],
+        existingSummary: null // Re-extraction clears override per PRD
+      });
+      extractedData.experience = enrichedRoles;
+      extractedData.experienceSummary = experienceSummary;
+
+      console.log('[ResumeExtraction] Extraction complete — candidate:', extractedData?.candidate?.name, ', experience roles:', enrichedRoles.length, ', totalYears:', experienceSummary.totalYears, ', level:', experienceSummary.experienceLevel);
 
       resumeDoc.status = 'extracted';
       resumeDoc.data = extractedData;
@@ -55,9 +64,10 @@ export class ResumeExtractionService {
       resumeDoc.tempFilePath = filePath;
       await resumeDoc.save();
 
-      // Update interview reference
+      // Update interview reference and experienceLevel
       await Interview.findByIdAndUpdate(interviewId, {
-        resumeId: resumeDoc._id
+        resumeId: resumeDoc._id,
+        experienceLevel: experienceSummary.experienceLevel || ''
       });
 
       return resumeDoc;

@@ -10,6 +10,7 @@ import { MappingService } from '../services/mapping.service.js';
 import { PlanningService } from '../services/planning.service.js';
 import { resumeDataSchema } from '../schemas/resume.schema.js';
 import { jdDataSchema } from '../schemas/jd.schema.js';
+import { ExperienceService } from '../services/experience.service.js';
 
 /**
  * Helper to verify recruiter owns the interview
@@ -289,6 +290,7 @@ export const getAnalysis = async (req, res, next) => {
       jd,
       mapping,
       plan,
+      experienceLevel: interview.experienceLevel || resume?.data?.experienceSummary?.experienceLevel || '',
       analysisStatus: interview.analysisStatus || 'none'
     });
   } catch (error) {
@@ -303,27 +305,114 @@ export const updateResumeData = async (req, res, next) => {
   try {
     const interview = await getOwnedInterview(req.params.id, req.user._id);
 
-    const validatedData = resumeDataSchema.parse(req.body);
-
-    const resume = await Resume.findOneAndUpdate(
-      { interviewId: interview._id },
-      {
-        data: validatedData,
-        editedByRecruiter: true
-      },
-      { returnDocument: 'after' }
-    );
-
-    if (!resume) {
+    const existingResume = await Resume.findOne({ interviewId: interview._id });
+    if (!existingResume) {
       const err = new Error('Resume record not found.');
       err.statusCode = 404;
       throw err;
     }
 
+    const jd = await JobDescription.findOne({ interviewId: interview._id });
+    const validatedData = resumeDataSchema.parse(req.body);
+
+    // Recompute experience summary and durationMonths per role
+    const { enrichedRoles, experienceSummary } = ExperienceService.computeExperienceSummary({
+      roles: validatedData.experience || [],
+      jdData: jd?.data || null,
+      existingSummary: existingResume.data?.experienceSummary || null
+    });
+
+    validatedData.experience = enrichedRoles;
+    validatedData.experienceSummary = experienceSummary;
+
+    existingResume.data = validatedData;
+    existingResume.editedByRecruiter = true;
+    existingResume.markModified('data');
+    await existingResume.save();
+
+    // Denormalize experienceLevel to Interview
+    await Interview.findByIdAndUpdate(interview._id, {
+      experienceLevel: experienceSummary.experienceLevel || ''
+    });
+
+    // Update Mapping with new years, gap, and level if mapping exists
+    await Mapping.findOneAndUpdate(
+      { interviewId: interview._id },
+      {
+        experienceLevel: experienceSummary.experienceLevel || '',
+        totalYears: experienceSummary.totalYears || 0,
+        jdExperienceGap: experienceSummary.jdExperienceGap || ''
+      }
+    );
+
+    // Update InterviewPlan with new years and level if plan exists
+    await InterviewPlan.findOneAndUpdate(
+      { interviewId: interview._id },
+      {
+        experienceLevel: experienceSummary.experienceLevel || '',
+        totalYears: experienceSummary.totalYears || 0
+      }
+    );
+
     res.status(200).json({
       success: true,
       message: 'Resume data updated successfully by recruiter.',
-      resume
+      resume: existingResume
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * PATCH /api/interviews/:id/experience-level
+ * Recruiter override for candidate experience level
+ */
+export const updateExperienceLevel = async (req, res, next) => {
+  try {
+    const interview = await getOwnedInterview(req.params.id, req.user._id);
+    const { level } = req.body;
+
+    const validLevels = ['fresher', 'junior', 'mid', 'senior', ''];
+    if (!validLevels.includes(level)) {
+      const err = new Error('Invalid experience level. Must be one of: fresher, junior, mid, senior.');
+      err.statusCode = 400;
+      throw err;
+    }
+
+    const resume = await Resume.findOne({ interviewId: interview._id });
+    if (resume && resume.data) {
+      if (!resume.data.experienceSummary) {
+        const { experienceSummary } = ExperienceService.computeExperienceSummary({
+          roles: resume.data.experience || []
+        });
+        resume.data.experienceSummary = experienceSummary;
+      }
+      resume.data.experienceSummary.experienceLevel = level;
+      resume.data.experienceSummary.levelOverriddenByRecruiter = true;
+      resume.markModified('data');
+      await resume.save();
+    }
+
+    await Interview.findByIdAndUpdate(interview._id, {
+      experienceLevel: level
+    });
+
+    await Mapping.findOneAndUpdate(
+      { interviewId: interview._id },
+      { experienceLevel: level }
+    );
+
+    await InterviewPlan.findOneAndUpdate(
+      { interviewId: interview._id },
+      { experienceLevel: level }
+    );
+
+    res.status(200).json({
+      success: true,
+      message: `Experience level updated to "${level}" by recruiter.`,
+      experienceLevel: level,
+      experienceSummary: resume?.data?.experienceSummary || null
     });
   } catch (error) {
     next(error);

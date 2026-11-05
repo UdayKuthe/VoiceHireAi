@@ -21,10 +21,27 @@ export const resumeProjectSchema = z.object({
 });
 
 export const resumeExperienceSchema = z.object({
-  company: z.string(),
-  role: z.string().default(''),
-  duration: z.string().default(''),
-  responsibilities: z.array(z.string()).default([])
+  company: z.string().default(''),
+  role: z.string().optional().default(''),
+  years: z.number().nullable().optional().default(null),
+  durationMonths: z.number().nullable().optional().default(null),
+  caption: z.string().optional().default(''),
+  startDate: z.string().default(''),
+  endDate: z.string().default(''),
+  isCurrent: z.boolean().default(false),
+  durationText: z.string().default(''),
+  yearsEditedByRecruiter: z.boolean().default(false),
+  warning: z.string().optional().default(''),
+  sourceText: z.string().default(''),
+  page: z.number().int().default(0)
+});
+
+export const experienceSummarySchema = z.object({
+  totalYears: z.number().default(0),
+  experienceLevel: z.string().default(''),
+  jdExperienceGap: z.string().default(''),
+  levelOverriddenByRecruiter: z.boolean().default(false),
+  warnings: z.array(z.string()).default([])
 });
 
 export const resumeEducationSchema = z.object({
@@ -44,6 +61,13 @@ export const resumeDataSchema = z.object({
   skills: z.array(resumeSkillSchema).default([]),
   projects: z.array(resumeProjectSchema).default([]),
   experience: z.array(resumeExperienceSchema).default([]),
+  experienceSummary: experienceSummarySchema.optional().default(() => ({
+    totalYears: 0,
+    experienceLevel: '',
+    jdExperienceGap: '',
+    levelOverriddenByRecruiter: false,
+    warnings: []
+  })),
   education: z.array(resumeEducationSchema).default([]),
   certifications: z.array(z.string()).default([]),
   claims: z.array(resumeClaimSchema).default([])

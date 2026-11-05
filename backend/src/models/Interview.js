@@ -63,6 +63,11 @@ const interviewSchema = new mongoose.Schema(
       type: String,
       enum: ['none', 'extracting', 'mapped', 'planned', 'failed'],
       default: 'none'
+    },
+    experienceLevel: {
+      type: String,
+      enum: ['fresher', 'junior', 'mid', 'senior', ''],
+      default: ''
     }
   },
   {

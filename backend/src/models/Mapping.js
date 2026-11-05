@@ -8,6 +8,22 @@ const mappingSchema = new mongoose.Schema(
       required: true,
       unique: true
     },
+    experienceLevel: {
+      type: String,
+      default: ''
+    },
+    totalYears: {
+      type: Number,
+      default: 0
+    },
+    relevantYears: {
+      type: Number,
+      default: 0
+    },
+    jdExperienceGap: {
+      type: String,
+      default: ''
+    },
     matchedSkills: {
       type: [String],
       default: []

@@ -7,11 +7,63 @@ import { Mapping } from '../models/Mapping.js';
 import { InterviewPlan } from '../models/InterviewPlan.js';
 import { Interview } from '../models/Interview.js';
 
+export const getLevelPlanConfig = (level) => {
+  const normLevel = (level || '').toLowerCase();
+  switch (normLevel) {
+    case 'senior':
+      return {
+        level: 'senior',
+        baseDifficulty: 'hard',
+        projectFocusAreas: ['architecture', 'scalability', 'failure handling', 'leadership'],
+        remainingBaseDifficulty: 'hard',
+        remainingFocusAreas: ['scenario and judgment questions'],
+        claimBudgetMultiplier: 1,
+        highSkillBudgetMin: 2,
+        medSkillBudgetMin: 1
+      };
+    case 'mid':
+      return {
+        level: 'mid',
+        baseDifficulty: 'medium',
+        projectFocusAreas: ['design decisions', 'trade-offs', 'performance', 'ownership'],
+        remainingBaseDifficulty: 'medium',
+        remainingFocusAreas: ['concept plus scenario'],
+        claimBudgetMultiplier: 1,
+        highSkillBudgetMin: 2,
+        medSkillBudgetMin: 1
+      };
+    case 'junior':
+      return {
+        level: 'junior',
+        baseDifficulty: 'easy',
+        projectFocusAreas: ['implementation', 'debugging', 'tool choices'],
+        remainingBaseDifficulty: 'medium',
+        remainingFocusAreas: ['exposure plus one concept question'],
+        claimBudgetMultiplier: 1,
+        highSkillBudgetMin: 1,
+        medSkillBudgetMin: 1
+      };
+    case 'fresher':
+    default:
+      return {
+        level: normLevel === 'fresher' ? 'fresher' : 'fresher',
+        baseDifficulty: 'easy',
+        projectFocusAreas: ['basics', 'own contribution', 'how it works'],
+        remainingBaseDifficulty: 'easy',
+        remainingFocusAreas: ['exposure check only'],
+        claimBudgetMultiplier: 1,
+        highSkillBudgetMin: 1,
+        medSkillBudgetMin: 1
+      };
+  }
+};
+
 export class PlanningService {
   /**
    * Constructs the deterministic dynamic sectioned interview plan
    */
-  static buildDeterministicPlan(resumeData, jdData, mapping) {
+  static buildDeterministicPlan(resumeData, jdData, mapping, experienceLevel = 'fresher') {
+    const cfg = getLevelPlanConfig(experienceLevel);
     const sections = [];
     let order = 1;
 
@@ -27,7 +79,9 @@ export class PlanningService {
         {
           name: 'Self introduction',
           topics: ['background', 'key skills', 'projects they want to highlight'],
-          questionBudget: 2
+          questionBudget: 2,
+          baseDifficulty: cfg.level === 'senior' ? 'medium' : 'easy',
+          focusAreas: ['background', 'key skills', 'projects they want to highlight']
         }
       ]
     });
@@ -71,17 +125,23 @@ export class PlanningService {
         {
           name: 'Resume claims',
           topics: linkedClaims,
-          questionBudget: Math.max(1, linkedClaims.length)
+          questionBudget: Math.max(1, linkedClaims.length),
+          baseDifficulty: cfg.baseDifficulty,
+          focusAreas: cfg.projectFocusAreas
         },
         {
           name: 'High-priority JD skills matched to this project',
           topics: highSkills,
-          questionBudget: Math.max(1, highSkills.length)
+          questionBudget: Math.max(cfg.highSkillBudgetMin, highSkills.length),
+          baseDifficulty: cfg.baseDifficulty,
+          focusAreas: cfg.projectFocusAreas
         },
         {
           name: 'Medium-priority JD skills matched to this project',
           topics: medSkills,
-          questionBudget: Math.max(1, medSkills.length)
+          questionBudget: Math.max(cfg.medSkillBudgetMin, medSkills.length),
+          baseDifficulty: cfg.baseDifficulty,
+          focusAreas: cfg.projectFocusAreas
         }
       ];
 
@@ -124,7 +184,9 @@ export class PlanningService {
       remainingGroups.push({
         name: 'High-priority JD skills not used in any project',
         topics: highUnmatched,
-        questionBudget: highUnmatched.length
+        questionBudget: Math.max(cfg.highSkillBudgetMin, highUnmatched.length),
+        baseDifficulty: cfg.remainingBaseDifficulty,
+        focusAreas: cfg.remainingFocusAreas
       });
     }
 
@@ -132,7 +194,9 @@ export class PlanningService {
       remainingGroups.push({
         name: 'Medium-priority JD skills not used in any project',
         topics: medUnmatched,
-        questionBudget: medUnmatched.length
+        questionBudget: Math.max(cfg.medSkillBudgetMin, medUnmatched.length),
+        baseDifficulty: cfg.remainingBaseDifficulty,
+        focusAreas: cfg.remainingFocusAreas
       });
     }
 
@@ -141,7 +205,9 @@ export class PlanningService {
       remainingGroups.push({
         name: 'Other remaining JD requirements',
         topics: selectedOther,
-        questionBudget: selectedOther.length
+        questionBudget: selectedOther.length,
+        baseDifficulty: cfg.remainingBaseDifficulty,
+        focusAreas: cfg.remainingFocusAreas
       });
     }
 
@@ -182,9 +248,27 @@ export class PlanningService {
       throw err;
     }
 
+    const interviewDoc = await Interview.findById(interviewId);
+    const experienceLevel =
+      interviewDoc?.experienceLevel ||
+      resume.data?.experienceSummary?.experienceLevel ||
+      mapping?.experienceLevel ||
+      'fresher';
+    const cfg = getLevelPlanConfig(experienceLevel);
+
     let planSections = [];
     try {
       const prompt = `${PLANNING_PROMPT}
+
+CANDIDATE EXPERIENCE JSON:
+${JSON.stringify({
+  experienceLevel: cfg.level,
+  totalYears: resume.data?.experienceSummary?.totalYears || 0,
+  companies: (resume.data?.experience || []).map((r) => ({
+    company: r.company,
+    years: r.years
+  }))
+}, null, 2)}
 
 CANDIDATE RESUME JSON:
 ${JSON.stringify(resume.data, null, 2)}
@@ -199,7 +283,8 @@ ${JSON.stringify({
   partialSkills: mapping.partialSkills,
   missingSkills: mapping.missingSkills,
   verificationPriorities: mapping.verificationPriorities,
-  skillDetails: mapping.skillDetails
+  skillDetails: mapping.skillDetails,
+  experienceLevel: cfg.level
 }, null, 2)}
 `;
 
@@ -222,7 +307,7 @@ ${JSON.stringify({
 
     // If Gemini didn't return or was incomplete, use full deterministic plan
     if (!planSections || planSections.length === 0) {
-      planSections = this.buildDeterministicPlan(resume.data, jd.data, mapping);
+      planSections = this.buildDeterministicPlan(resume.data, jd.data, mapping, cfg.level);
     }
 
     // Enforce section ordering: introduction first, project sections, remaining_requirements last
@@ -243,6 +328,20 @@ ${JSON.stringify({
     // For project sections, ensure exactly the 3 mandatory groups in order (even when empty).
     // For non-project sections, omit empty groups.
     const finalSections = planSections.map((sec, idx) => {
+      if (sec.type === 'introduction') {
+        return {
+          ...sec,
+          order: idx + 1,
+          groups: (sec.groups || []).map((g) => ({
+            ...g,
+            baseDifficulty: g.baseDifficulty || (cfg.level === 'senior' ? 'medium' : 'easy'),
+            focusAreas: Array.isArray(g.focusAreas) && g.focusAreas.length > 0
+              ? g.focusAreas
+              : ['background', 'key skills', 'projects they want to highlight']
+          }))
+        };
+      }
+
       if (sec.type === 'project') {
         const claimsGrp = (sec.groups || []).find((g) => g.name.toLowerCase().includes('claim')) || {
           name: 'Resume claims',
@@ -252,12 +351,12 @@ ${JSON.stringify({
         const highGrp = (sec.groups || []).find((g) => g.name.toLowerCase().includes('high')) || {
           name: 'High-priority JD skills matched to this project',
           topics: [],
-          questionBudget: 1
+          questionBudget: cfg.highSkillBudgetMin
         };
         const medGrp = (sec.groups || []).find((g) => g.name.toLowerCase().includes('medium')) || {
           name: 'Medium-priority JD skills matched to this project',
           topics: [],
-          questionBudget: 1
+          questionBudget: cfg.medSkillBudgetMin
         };
 
         return {
@@ -267,26 +366,47 @@ ${JSON.stringify({
             {
               name: 'Resume claims',
               topics: claimsGrp.topics || [],
-              questionBudget: claimsGrp.questionBudget || 1
+              questionBudget: claimsGrp.questionBudget || 1,
+              baseDifficulty: claimsGrp.baseDifficulty || cfg.baseDifficulty,
+              focusAreas: Array.isArray(claimsGrp.focusAreas) && claimsGrp.focusAreas.length > 0
+                ? claimsGrp.focusAreas
+                : cfg.projectFocusAreas
             },
             {
               name: 'High-priority JD skills matched to this project',
               topics: highGrp.topics || [],
-              questionBudget: highGrp.questionBudget || 1
+              questionBudget: Math.max(cfg.highSkillBudgetMin, highGrp.questionBudget || 1),
+              baseDifficulty: highGrp.baseDifficulty || cfg.baseDifficulty,
+              focusAreas: Array.isArray(highGrp.focusAreas) && highGrp.focusAreas.length > 0
+                ? highGrp.focusAreas
+                : cfg.projectFocusAreas
             },
             {
               name: 'Medium-priority JD skills matched to this project',
               topics: medGrp.topics || [],
-              questionBudget: medGrp.questionBudget || 1
+              questionBudget: Math.max(cfg.medSkillBudgetMin, medGrp.questionBudget || 1),
+              baseDifficulty: medGrp.baseDifficulty || cfg.baseDifficulty,
+              focusAreas: Array.isArray(medGrp.focusAreas) && medGrp.focusAreas.length > 0
+                ? medGrp.focusAreas
+                : cfg.projectFocusAreas
             }
           ]
         };
       }
 
+      // remaining_requirements section
       return {
         ...sec,
         order: idx + 1,
-        groups: (sec.groups || []).filter((g) => Array.isArray(g.topics) && g.topics.length > 0)
+        groups: (sec.groups || [])
+          .filter((g) => Array.isArray(g.topics) && g.topics.length > 0)
+          .map((g) => ({
+            ...g,
+            baseDifficulty: g.baseDifficulty || cfg.remainingBaseDifficulty,
+            focusAreas: Array.isArray(g.focusAreas) && g.focusAreas.length > 0
+              ? g.focusAreas
+              : cfg.remainingFocusAreas
+          }))
       };
     });
 
@@ -295,13 +415,15 @@ ${JSON.stringify({
       { interviewId },
       {
         interviewId,
+        experienceLevel: cfg.level,
         sections: finalSections
       },
       { upsert: true, returnDocument: 'after', setDefaultsOnInsert: true }
     );
 
     await Interview.findByIdAndUpdate(interviewId, {
-      analysisStatus: 'planned'
+      analysisStatus: 'planned',
+      experienceLevel: cfg.level
     });
 
     return planDoc;
@@ -317,11 +439,22 @@ ${JSON.stringify({
     // Validate using Zod schema
     const validated = interviewPlanDataSchema.parse({ sections });
 
-    // Re-assign order 1..N and clean groups
+    const existingPlan = await InterviewPlan.findOne({ interviewId });
+    const cfg = getLevelPlanConfig(existingPlan?.experienceLevel || 'fresher');
+
+    // Re-assign order 1..N and clean groups while ensuring baseDifficulty and focusAreas are preserved
     const reordered = validated.sections.map((sec, idx) => ({
       ...sec,
       order: idx + 1,
-      groups: (sec.groups || []).filter((g) => Array.isArray(g.topics) && g.topics.length > 0)
+      groups: (sec.groups || [])
+        .filter((g) => Array.isArray(g.topics) && g.topics.length > 0)
+        .map((g) => ({
+          ...g,
+          baseDifficulty: g.baseDifficulty || (sec.type === 'project' ? cfg.baseDifficulty : (sec.type === 'introduction' ? (cfg.level === 'senior' ? 'medium' : 'easy') : cfg.remainingBaseDifficulty)),
+          focusAreas: Array.isArray(g.focusAreas) && g.focusAreas.length > 0
+            ? g.focusAreas
+            : (sec.type === 'project' ? cfg.projectFocusAreas : (sec.type === 'introduction' ? ['background', 'key skills', 'projects they want to highlight'] : cfg.remainingFocusAreas))
+        }))
     }));
 
     const planDoc = await InterviewPlan.findOneAndUpdate(

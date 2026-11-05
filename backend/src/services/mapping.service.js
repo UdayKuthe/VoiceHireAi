@@ -5,6 +5,7 @@ import { Resume } from '../models/Resume.js';
 import { JobDescription } from '../models/JobDescription.js';
 import { Mapping } from '../models/Mapping.js';
 import { Interview } from '../models/Interview.js';
+import { ExperienceService } from './experience.service.js';
 
 export class MappingService {
   /**
@@ -393,9 +394,19 @@ ${JSON.stringify(jd.data, null, 2)}
         }
         return proj;
       });
-      resume.markModified('data');
-      await resume.save();
     }
+
+    // Recompute experience summary and company years using current JD requirements
+    const { enrichedRoles, experienceSummary } = ExperienceService.computeExperienceSummary({
+      roles: Array.isArray(resume.data.experience) ? resume.data.experience : [],
+      jdData: jd.data,
+      existingSummary: resume.data.experienceSummary
+    });
+
+    resume.data.experience = enrichedRoles;
+    resume.data.experienceSummary = experienceSummary;
+    resume.markModified('data');
+    await resume.save();
 
     // Overwrite existing mapping
     const mappingDoc = await Mapping.findOneAndUpdate(
@@ -407,13 +418,17 @@ ${JSON.stringify(jd.data, null, 2)}
         missingSkills: mappedResult.missingSkills || [],
         verificationPriorities: mappedResult.verificationPriorities || [],
         projectPriorities,
-        skillDetails
+        skillDetails,
+        experienceLevel: experienceSummary.experienceLevel || '',
+        totalYears: experienceSummary.totalYears || 0,
+        jdExperienceGap: experienceSummary.jdExperienceGap || ''
       },
       { upsert: true, returnDocument: 'after', setDefaultsOnInsert: true }
     );
 
     await Interview.findByIdAndUpdate(interviewId, {
-      analysisStatus: 'mapped'
+      analysisStatus: 'mapped',
+      experienceLevel: experienceSummary.experienceLevel || ''
     });
 
     console.log('[MappingService] Skill mapping and Project Priorities saved — projects:', mappingDoc.projectPriorities.length);

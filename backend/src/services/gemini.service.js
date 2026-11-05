@@ -466,10 +466,17 @@ export class GeminiService {
       ],
       experience: [
         {
-          company: 'Technology Experience',
+          company: 'Technology Experience Corp',
           role: 'Software Engineer',
-          duration: 'Recent',
-          responsibilities: ['Built production systems and collaborated across teams']
+          years: 2.0,
+          startDate: 'Jan 2022',
+          endDate: 'Dec 2023',
+          isCurrent: false,
+          durationText: '2 years',
+          yearsEditedByRecruiter: false,
+          warning: '',
+          sourceText: 'Technology Experience Corp from Jan 2022 to Dec 2023',
+          page: 1
         }
       ],
       education: [

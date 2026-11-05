@@ -83,7 +83,8 @@ export const api = {
       : (payload?.sections ? payload : { sections: payload?.items || payload });
     return request(`/api/interviews/${interviewId}/plan`, { method: 'PATCH', body });
   },
-  overrideProjectPriority: (interviewId, { projectName, priority }) => request(`/api/interviews/${interviewId}/project-priority`, { method: 'PATCH', body: { projectName, priority } })
+  overrideProjectPriority: (interviewId, { projectName, priority }) => request(`/api/interviews/${interviewId}/project-priority`, { method: 'PATCH', body: { projectName, priority } }),
+  overrideExperienceLevel: (interviewId, level) => request(`/api/interviews/${interviewId}/experience-level`, { method: 'PATCH', body: { level } })
 };
 
 export default api;

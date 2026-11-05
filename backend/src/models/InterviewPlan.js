@@ -4,7 +4,13 @@ const groupSchema = new mongoose.Schema(
   {
     name: { type: String, required: true },
     topics: [{ type: String }],
-    questionBudget: { type: Number, default: 0 }
+    questionBudget: { type: Number, default: 0 },
+    baseDifficulty: {
+      type: String,
+      enum: ['easy', 'medium', 'hard'],
+      default: 'medium'
+    },
+    focusAreas: [{ type: String }]
   },
   { _id: false }
 );
@@ -37,6 +43,10 @@ const interviewPlanSchema = new mongoose.Schema(
       ref: 'Interview',
       required: true,
       unique: true
+    },
+    experienceLevel: {
+      type: String,
+      default: ''
     },
     sections: [sectionSchema]
   },

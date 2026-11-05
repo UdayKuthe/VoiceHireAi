@@ -3,7 +3,9 @@ import { z } from 'zod';
 export const planGroupSchema = z.object({
   name: z.string(),
   topics: z.array(z.string()).default([]),
-  questionBudget: z.number().int().min(0).default(0)
+  questionBudget: z.number().int().min(0).default(0),
+  baseDifficulty: z.enum(['easy', 'medium', 'hard']).default('medium'),
+  focusAreas: z.array(z.string()).default([])
 });
 
 export const planSectionSchema = z.object({
@@ -17,6 +19,7 @@ export const planSectionSchema = z.object({
 });
 
 export const interviewPlanDataSchema = z.object({
+  experienceLevel: z.string().optional().default(''),
   sections: z.array(planSectionSchema).default([])
 });
 

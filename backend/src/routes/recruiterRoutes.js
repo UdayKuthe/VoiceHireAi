@@ -16,7 +16,8 @@ import {
   updateResumeData,
   updateJdData,
   updatePlan,
-  updateProjectPriority
+  updateProjectPriority,
+  updateExperienceLevel
 } from '../controllers/analysisController.js';
 import { authenticate, requireRole } from '../middleware/auth.js';
 import { uploadSinglePdf } from '../middleware/upload.js';
@@ -42,5 +43,6 @@ router.patch('/interviews/:id/resume/data', recruiterAuth, updateResumeData);
 router.patch('/interviews/:id/jd/data', recruiterAuth, updateJdData);
 router.patch('/interviews/:id/plan', recruiterAuth, updatePlan);
 router.patch('/interviews/:id/project-priority', recruiterAuth, updateProjectPriority);
+router.patch('/interviews/:id/experience-level', recruiterAuth, updateExperienceLevel);
 
 export default router;

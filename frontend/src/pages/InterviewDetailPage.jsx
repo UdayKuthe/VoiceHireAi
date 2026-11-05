@@ -29,7 +29,9 @@ import {
   Plus,
   X,
   User,
-  HelpCircle
+  HelpCircle,
+  Clock,
+  Building
 } from 'lucide-react';
 
 export const InterviewDetailPage = () => {
@@ -290,6 +292,144 @@ export const InterviewDetailPage = () => {
       setError(err.message || 'Failed to update project priority.');
     } finally {
       setActionLoading('');
+    }
+  };
+
+  // Recruiter override for candidate Experience Level
+  const handleExperienceLevelOverride = async (newLevel) => {
+    try {
+      setActionLoading('override_level');
+      setError('');
+      setSuccessMsg('');
+      await api.overrideExperienceLevel(id, newLevel);
+      setSuccessMsg(`Experience level updated to "${newLevel ? newLevel.toUpperCase() : 'AUTO'}" by recruiter. Click "Regenerate" to update plan.`);
+      await fetchAnalysis(true);
+    } catch (err) {
+      setError(err.message || 'Failed to update experience level.');
+    } finally {
+      setActionLoading('');
+    }
+  };
+
+  const computeLocalExp = (roles) => {
+    const list = Array.isArray(roles) ? roles : [];
+    const total = list.reduce((sum, r) => {
+      const y = typeof r.years === 'number' && !isNaN(r.years) ? r.years : parseFloat(r.years);
+      return sum + (!isNaN(y) && y !== null ? y : 0);
+    }, 0);
+    const rounded = Math.round(total * 100) / 100;
+    let level = 'fresher';
+    if (rounded >= 6.0) level = 'senior';
+    else if (rounded >= 3.0) level = 'mid';
+    else if (rounded >= 1.0) level = 'junior';
+    return { totalYears: rounded, level };
+  };
+
+  const formatYearsDisplay = (val) => {
+    if (val === null || val === undefined || isNaN(val) || val === 0) return '0';
+    const num = Math.round(Number(val) * 100) / 100;
+    return num.toString();
+  };
+
+  // Add a new company entry to editableResume
+  const handleAddExperienceRole = () => {
+    if (!editableResume) return;
+    const currentRoles = Array.isArray(editableResume.experience) ? editableResume.experience : [];
+    const newEntry = {
+      company: 'New Company',
+      years: 1.0,
+      durationMonths: 12,
+      caption: '',
+      yearsEditedByRecruiter: true,
+      warning: ''
+    };
+    const updated = [newEntry, ...currentRoles];
+    const { totalYears, level } = computeLocalExp(updated);
+    setEditableResume({
+      ...editableResume,
+      experience: updated,
+      experienceSummary: {
+        ...editableResume.experienceSummary,
+        totalYears,
+        experienceLevel: editableResume.experienceSummary?.levelOverriddenByRecruiter
+          ? editableResume.experienceSummary.experienceLevel
+          : level
+      }
+    });
+  };
+
+  // Update a field in a company entry
+  const handleUpdateExperienceRole = (index, field, value) => {
+    if (!editableResume?.experience) return;
+    const updated = [...editableResume.experience];
+    if (field === 'years') {
+      const parsedYears = value === '' || value === null ? null : parseFloat(value);
+      updated[index] = {
+        ...updated[index],
+        years: parsedYears === null || isNaN(parsedYears) ? null : parsedYears,
+        yearsEditedByRecruiter: true,
+        warning: parsedYears === null ? 'Years empty' : ''
+      };
+    } else {
+      updated[index] = {
+        ...updated[index],
+        [field]: value
+      };
+    }
+    const { totalYears, level } = computeLocalExp(updated);
+    setEditableResume({
+      ...editableResume,
+      experience: updated,
+      experienceSummary: {
+        ...editableResume.experienceSummary,
+        totalYears,
+        experienceLevel: editableResume.experienceSummary?.levelOverriddenByRecruiter
+          ? editableResume.experienceSummary.experienceLevel
+          : level
+      }
+    });
+  };
+
+  // Delete an experience entry
+  const handleDeleteExperienceRole = (index) => {
+    if (!editableResume?.experience) return;
+    const updated = editableResume.experience.filter((_, idx) => idx !== index);
+    const { totalYears, level } = computeLocalExp(updated);
+    setEditableResume({
+      ...editableResume,
+      experience: updated,
+      experienceSummary: {
+        ...editableResume.experienceSummary,
+        totalYears,
+        experienceLevel: editableResume.experienceSummary?.levelOverriddenByRecruiter
+          ? editableResume.experienceSummary.experienceLevel
+          : level
+      }
+    });
+  };
+
+  const getLevelBadgeColor = (level) => {
+    switch ((level || '').toLowerCase()) {
+      case 'senior':
+        return 'bg-purple-500/20 text-purple-300 border-purple-500/40';
+      case 'mid':
+        return 'bg-blue-500/20 text-blue-300 border-blue-500/40';
+      case 'junior':
+        return 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40';
+      case 'fresher':
+        return 'bg-amber-500/20 text-amber-300 border-amber-500/40';
+      default:
+        return 'bg-slate-700/60 text-slate-300 border-slate-600';
+    }
+  };
+
+  const formatEmploymentType = (type) => {
+    switch (type) {
+      case 'full_time': return 'Full-Time';
+      case 'internship': return 'Internship';
+      case 'contract': return 'Contract';
+      case 'freelance': return 'Freelance';
+      default: return 'Other';
     }
   };
 
@@ -684,6 +824,174 @@ export const InterviewDetailPage = () => {
                     </div>
                   </div>
 
+                  {/* Experience Section */}
+                  <div className="space-y-4 pt-2 border-t border-slate-800">
+                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 bg-slate-800/60 p-4 rounded-xl border border-slate-750">
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <h5 className="text-xs font-bold text-white uppercase tracking-wider m-0 flex items-center gap-1.5">
+                            <Briefcase className="w-4 h-4 text-indigo-400" />
+                            <span>Work Experience Summary</span>
+                          </h5>
+                          <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider border ${getLevelBadgeColor(editableResume.experienceSummary?.experienceLevel || computeLocalExp(editableResume.experience || []).level)}`}>
+                            {editableResume.experienceSummary?.experienceLevel || computeLocalExp(editableResume.experience || []).level}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-3 text-xs text-slate-300 mt-2">
+                          <span>
+                            Total: <strong className="text-white">{formatYearsDisplay(editableResume.experienceSummary?.totalYears ?? computeLocalExp(editableResume.experience || []).totalYears)} yrs</strong>
+                          </span>
+                          {editableResume.experienceSummary?.jdExperienceGap && (
+                            <>
+                              <span>•</span>
+                              <span className="text-indigo-300">
+                                Gap: <strong>{editableResume.experienceSummary.jdExperienceGap}</strong>
+                              </span>
+                            </>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-2">
+                        <label className="text-[11px] font-semibold text-slate-400">Level Override:</label>
+                        <select
+                          value={editableResume.experienceSummary?.levelOverriddenByRecruiter ? (editableResume.experienceSummary?.experienceLevel || '') : ''}
+                          onChange={(e) => handleExperienceLevelOverride(e.target.value)}
+                          disabled={actionLoading === 'override_level'}
+                          className="px-2.5 py-1.5 rounded-lg bg-slate-900 border border-slate-700 text-xs font-semibold text-slate-200 cursor-pointer focus:border-indigo-500"
+                        >
+                          <option value="">
+                            Auto (Derived): {(() => {
+                              const lvl = computeLocalExp(editableResume.experience || []).level;
+                              return lvl ? lvl.charAt(0).toUpperCase() + lvl.slice(1) : 'Fresher';
+                            })()}
+                          </option>
+                          <option value="fresher">Fresher (&lt; 1 yr)</option>
+                          <option value="junior">Junior (1 to &lt; 3 yrs)</option>
+                          <option value="mid">Mid-level (3 to &lt; 6 yrs)</option>
+                          <option value="senior">Senior (6+ yrs)</option>
+                        </select>
+                        {editableResume.experienceSummary?.levelOverriddenByRecruiter && (
+                          <span className="text-[10px] text-indigo-400 font-bold bg-indigo-500/10 px-2 py-0.5 rounded border border-indigo-500/20">
+                            Overridden
+                          </span>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Warning banner: only shown if there are summary warnings */}
+                    {Array.isArray(editableResume.experienceSummary?.warnings) && editableResume.experienceSummary.warnings.length > 0 && (
+                      <div className="p-3.5 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs space-y-1">
+                        {editableResume.experienceSummary.warnings.map((w, wIdx) => (
+                          <div key={wIdx} className="flex items-center gap-2">
+                            <AlertTriangle className="w-4 h-4 text-amber-400 flex-shrink-0" />
+                            <span>{w}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    <div className="flex items-center justify-between pt-1">
+                      <div className="flex items-center gap-2">
+                        <label className="block text-[11px] font-semibold text-slate-400 uppercase tracking-wider m-0">
+                          Work Experience ({editableResume.experience?.length || 0})
+                        </label>
+                        <button
+                          type="button"
+                          onClick={handleExtract}
+                          disabled={actionLoading === 'extract'}
+                          className="text-[11px] text-indigo-400 hover:text-indigo-300 underline cursor-pointer"
+                          title="Re-run extraction to replace experience data with latest parser"
+                        >
+                          Re-extract
+                        </button>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={handleAddExperienceRole}
+                        className="py-1 px-2.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white text-xs font-semibold flex items-center gap-1 border border-slate-700 transition-colors cursor-pointer"
+                      >
+                        <Plus className="w-3.5 h-3.5" />
+                        <span>Add Company</span>
+                      </button>
+                    </div>
+
+                    {/* Company rows or Empty State */}
+                    {(!editableResume.experience || editableResume.experience.length === 0) ? (
+                      <div className="p-8 rounded-xl bg-slate-800/30 border border-slate-800 text-center space-y-2">
+                        <Briefcase className="w-8 h-8 text-slate-600 mx-auto" />
+                        <p className="text-xs text-slate-400 m-0">No work experience found in this resume.</p>
+                      </div>
+                    ) : (
+                      <div className="space-y-2">
+                        {editableResume.experience.map((entry, idx) => (
+                          <div
+                            key={idx}
+                            className="p-3 rounded-xl bg-slate-800/40 border border-slate-800 hover:border-slate-700 transition-colors space-y-1.5"
+                          >
+                            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                              <div className="flex-1">
+                                <label className="block text-[10px] uppercase font-semibold text-slate-400 mb-1">Company</label>
+                                <input
+                                  type="text"
+                                  placeholder="Company Name"
+                                  value={entry.company || ''}
+                                  onChange={(e) => handleUpdateExperienceRole(idx, 'company', e.target.value)}
+                                  className="w-full px-2.5 py-1.5 rounded-lg bg-slate-800 border border-slate-700 text-xs text-white"
+                                />
+                              </div>
+
+                              <div className="w-full sm:w-28">
+                                <label className="block text-[10px] uppercase font-semibold text-slate-400 mb-1">Years</label>
+                                <input
+                                  type="number"
+                                  step="0.01"
+                                  min="0"
+                                  placeholder="0.00"
+                                  value={entry.years !== null && entry.years !== undefined ? entry.years : ''}
+                                  onChange={(e) => handleUpdateExperienceRole(idx, 'years', e.target.value)}
+                                  className="w-full px-2.5 py-1.5 rounded-lg bg-slate-800 border border-slate-700 text-xs text-white"
+                                />
+                              </div>
+
+                              <div className="flex items-center gap-2 pt-2 sm:pt-5">
+                                {entry.warning && (
+                                  <span
+                                    className="px-2 py-0.5 rounded text-[10px] font-semibold bg-amber-500/10 text-amber-300 border border-amber-500/30 flex items-center gap-1"
+                                    title={entry.warning}
+                                  >
+                                    <AlertTriangle className="w-3 h-3 text-amber-400 flex-shrink-0" />
+                                    <span>{entry.warning}</span>
+                                  </span>
+                                )}
+                                {entry.yearsEditedByRecruiter && (
+                                  <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-indigo-500/10 text-indigo-300 border border-indigo-500/20">
+                                    Edited
+                                  </span>
+                                )}
+                                <button
+                                  type="button"
+                                  onClick={() => handleDeleteExperienceRole(idx)}
+                                  className="p-1.5 rounded-lg hover:bg-rose-500/20 text-slate-400 hover:text-rose-400 transition-colors cursor-pointer"
+                                  title="Delete Company"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
+                            </div>
+
+                            {/* Muted read-only caption with parsed range and duration */}
+                            {(entry.caption || (entry.startDate && (entry.endDate || entry.isCurrent))) && (
+                              <div className="text-[11px] text-slate-400 pl-0.5">
+                                {entry.caption || `${entry.startDate} – ${entry.isCurrent ? 'Present' : entry.endDate}${entry.durationMonths ? ` · ${entry.durationMonths} month${entry.durationMonths === 1 ? '' : 's'}` : ''}`}
+                              </div>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
                   {/* Skills Tag Field */}
                   <div>
                     <label className="block text-[11px] font-semibold text-slate-400 uppercase tracking-wider mb-1.5">
@@ -854,6 +1162,51 @@ export const InterviewDetailPage = () => {
                     <p className="text-xs text-slate-400 mt-0.5">
                       Evaluated against the Job Description requirements.
                     </p>
+                  </div>
+
+                  {/* Experience Level & Alignment Card */}
+                  <div className="p-4 rounded-xl bg-slate-800/80 border border-slate-750 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                    <div className="space-y-1.5">
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-1.5">
+                          <Briefcase className="w-4 h-4 text-indigo-400" />
+                          <span>Candidate Experience Level</span>
+                        </span>
+                        <span className={`px-2.5 py-0.5 rounded-full text-xs font-bold uppercase tracking-wider border ${getLevelBadgeColor(analysis.mapping?.experienceLevel || editableResume?.experienceSummary?.experienceLevel)}`}>
+                          {analysis.mapping?.experienceLevel || editableResume?.experienceSummary?.experienceLevel || 'Fresher'}
+                        </span>
+                      </div>
+                      <div className="flex flex-wrap items-center gap-3 text-xs text-slate-300">
+                        <span>
+                          Total: <strong className="text-white">{formatYearsDisplay(analysis.mapping?.totalYears ?? editableResume?.experienceSummary?.totalYears)} yrs</strong>
+                        </span>
+                        <span>•</span>
+                        <span className="text-indigo-300">
+                          JD Gap: <strong>{analysis.mapping?.jdExperienceGap || editableResume?.experienceSummary?.jdExperienceGap || 'No requirement stated'}</strong>
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs text-slate-400 font-semibold">Override Level:</span>
+                      <select
+                        value={editableResume?.experienceSummary?.levelOverriddenByRecruiter ? (analysis.mapping?.experienceLevel || editableResume?.experienceSummary?.experienceLevel || '') : ''}
+                        onChange={(e) => handleExperienceLevelOverride(e.target.value)}
+                        disabled={actionLoading === 'override_level'}
+                        className="px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-700 text-xs font-semibold text-slate-200 cursor-pointer focus:border-indigo-500"
+                      >
+                        <option value="">
+                          Auto (Derived): {(() => {
+                            const lvl = computeLocalExp(editableResume?.experience || []).level;
+                            return lvl ? lvl.charAt(0).toUpperCase() + lvl.slice(1) : 'Fresher';
+                          })()}
+                        </option>
+                        <option value="fresher">Fresher (&lt; 1 yr)</option>
+                        <option value="junior">Junior (1 to &lt; 3 yrs)</option>
+                        <option value="mid">Mid-level (3 to &lt; 6 yrs)</option>
+                        <option value="senior">Senior (6+ yrs)</option>
+                      </select>
+                    </div>
                   </div>
 
                   {/* 3 Skill Groups */}
@@ -1074,6 +1427,19 @@ export const InterviewDetailPage = () => {
                 </div>
               ) : (
                 <div className="space-y-4">
+                  <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+                    <div>
+                      <h4 className="text-sm font-bold text-white m-0">Dynamic Sectioned Interview Plan</h4>
+                      <p className="text-xs text-slate-400 mt-0.5">
+                        Structured interview roadmap organized by candidate projects and requirements.
+                      </p>
+                    </div>
+                    {(analysis?.plan?.experienceLevel || analysis?.interview?.experienceLevel) && (
+                      <span className={`px-2.5 py-1 rounded-full text-xs font-bold uppercase tracking-wider border ${getLevelBadgeColor(analysis.plan?.experienceLevel || analysis.interview?.experienceLevel)}`}>
+                        {analysis.plan?.experienceLevel || analysis.interview?.experienceLevel} Level
+                      </span>
+                    )}
+                  </div>
                   {planSections.map((section, secIdx) => {
                     const priorityColor = {
                       high: 'bg-rose-500/20 text-rose-300 border-rose-500/40',

@@ -1,81 +1,79 @@
-# AGENT TASK: VoiceHire AI — Phase 2 (Resume/JD Extraction & Interview Planning)
+# VoiceHire AI: Task PRD, Experience Extraction Bug Fixes
 
-Extend the existing Phase 1 codebase. No Redis, LiveKit, STT, TTS, RAG, embeddings or vector DB. Local dev only.
+## 1. Problems (from screenshots)
+- **P1, no experience, but a fake row:** The resume has no work experience, yet the UI shows one company named "Professional Experience" (a section heading). Total is 0 and a warning asks the recruiter to set the level. Expected: no rows, total 0 yrs, level Fresher automatically.
+- **P2, one job split into two rows:** The resume has one job: "Cohyve", role "Frontend Developer Intern", "May 2025 – June 2025". The UI shows two rows. Row 1 is "• Cohyve May 2025 - June 2025" (bullet and dates inside the company name). Row 2 is "Frontend Developer Intern" (the role read as a company).
+- **P3, years not calculated:** Both rows show 0 yrs and "Unparseable duration", because the dates were never separated into start/end and the date parser did not handle this format. Expected: about 0.17 yrs.
+- **P4, total and level:** The summary stays at 0 and gives no derived level. Expected: the sum of all entries and an auto level badge.
 
-## Assumptions
-- Gemini model name is read from env (`GEMINI_MODEL`); use the official `@google/genai` SDK with the PDF sent as inline data (<20MB) or the Files API (larger).
-- Extraction, mapping and planning are triggered per Interview (resume + JD attach to an interview).
-- Endpoints below are proposed (the PRD has no API spec).
+## 2. Fixes: Extraction (Gemini, direct PDF)
+- Update the experience schema and prompt:
+  - `company`: employer name only. No bullets, dates, roles or section headings.
+  - `role`: job title (extraction helper only. Stored, but not shown in the UI and not used downstream).
+  - `startDate`, `endDate`, `isCurrent`, `durationText`: the date range printed next to or under the company goes here, never into `company`.
+- Prompt rules:
+  - One entry per employer or job position block.
+  - A line in italics or under a company name is usually the role. It is not a company.
+  - A section heading ("Experience", "Professional Experience", "Work Experience", "Employment") is never a company.
+  - If the section has no entries, return `experience: []`.
+  - Projects, education and certifications are never experience.
+  - Use the examples as schema descriptions only. Do not put real sample content in the prompt.
+- Server-side sanitization, applied after extraction and before saving:
+  - Strip leading bullets/symbols and surrounding whitespace from `company`.
+  - Remove any date range or duration text found inside `company`. If `startDate`/`endDate` are empty, move the removed text there.
+  - Drop any entry whose company equals a section-heading phrase (case-insensitive list: experience, work experience, professional experience, employment, internship experience, work history).
+  - Drop any entry with no company name, or an entry equal to another entry's `role` (a role read as a company). If its dates are empty, merge them into the matching entry.
+  - Merge duplicate entries with the same company and the same dates.
+  - Log removed or merged entries in `warnings`, server-side only.
+- Retry once with the same prompt if validation fails (existing rule).
 
-## Env
-- server/.env add: GOOGLE_GEMINI_API_KEY, GEMINI_MODEL, UPLOAD_DIR=./uploads, MAX_UPLOAD_MB=10
-- Add `uploads/` to `.gitignore`. Key is server-side only.
+## 3. Fixes: Years Calculation (server-side)
+- Parse dates case-insensitively, and accept:
+  - Full and short month names: "May 2025", "June 2025", "Sept 2025"
+  - Numeric forms: "05/2025", "2025-05"
+  - Year only: "2025"
+  - Separators: "-", "–", "—", "to"
+  - Present markers: "Present", "Current", "Till date", "Ongoing", "Now"
+- Month-based ranges: months = (end year − start year) × 12 + (end month − start month) + 1. Both end months count. A current job ends at today's month.
+  - Example: May 2025 – June 2025 = 2 months = 0.17 yrs
+- Year-only ranges: years = end − start. Add warning "Approximate: dates have no months". If both years are equal, leave the years empty with a warning.
+- If dates are absent, parse `durationText` ("2 yrs 3 mos", "6 months").
+- `years` = months / 12, rounded to 2 decimals.
+- If nothing is parseable: years empty (not 0), and a warning on that row only.
+- `totalYears` = sum of the entries' years, rounded to 2 decimals. Overlapping dates add a warning and do not change the sum.
+- `experienceLevel`, derived from `totalYears` (thresholds unchanged): fresher under 1, junior 1 to under 3, mid 3 to under 6, senior 6+.
+- No entries: `totalYears = 0`, `experienceLevel = fresher`, and no warning.
+- Entries exist but none parseable: total 0, level fresher, with the row warnings only.
+- The "set the experience level" banner appears only when the recruiter's manual action is truly needed (entries exist but none are parseable). Otherwise the level is derived automatically.
+- Recompute on every extraction, edit, add or delete.
 
-## Hard Rules
-- PDF goes straight to Gemini. **No OCR, spaCy, SkillNER or keyword extraction.**
-- Request JSON output (`responseMimeType: application/json` + response schema). Validate with zod/ajv; on invalid output retry once, then return a specific error.
-- Use `multer` with a PDF-only filter (mime + extension) and a size limit. Store files in `UPLOAD_DIR` under random names.
-- Uploaded files are never publicly served; never put PDFs in Redis. Delete the temp file after successful extraction (keep metadata in Mongo).
-- Recruiters access only their own interviews and candidates.
+## 4. Fixes: UI (Resume Data tab, Experience section)
+- Summary card:
+  - Total years (2 decimals trimmed, e.g. "0.17 yrs", "2.5 yrs") and a level badge, always visible. With no experience: "Total: 0 yrs", badge "Fresher".
+  - Level override dropdown: the "Auto (Derived)" option shows the derived level, e.g. "Auto (Derived): Fresher". An override persists and re-extraction clears it.
+- Empty state: no rows, only "No work experience found in this resume." Never create a placeholder or heading-based row.
+- Rows: company (editable text) and years (editable number, step 0.01). Add below each row a muted read-only caption with the parsed range and duration, e.g. "May 2025 – Jun 2025 · 2 months". Do not show role.
+- Row warning badge only on rows that need attention.
+- The recruiter can edit, add and delete rows. After any change the total and level refresh. Editing years sets `yearsEditedByRecruiter`.
+- Show a "Re-extract" hint if old data looks wrong. Existing stored resumes need re-extraction (replace, not merge) to pick up these fixes.
 
-## Data Models (Mongoose)
-Resume: interviewId, candidateId, fileName, uploadedAt, status (`uploaded|processing|extracted|failed`), error?, data, editedByRecruiter (bool)
-- data: `{candidate:{name,email,phone,location}, skills:[{name,level?,evidence?}], projects:[{name,description,technologies[],responsibilities[]}], experience:[{company,role,duration,responsibilities[]}], education:[], certifications:[], claims:[{text,relatedSkill?,relatedProject?}]}`
+## 5. Data Model Deltas
+- Resume.data.experience[]: + role (hidden), durationMonths; `years` stored as a number or null
+- Resume.data.experienceSummary: totalYears (2 decimals), experienceLevel (always set unless overridden), warnings[]
+- Mapping, Interview and InterviewPlan copies of `experienceLevel` and `totalYears` are updated after recompute.
 
-JD: interviewId, fileName, uploadedAt, status, error?, data, editedByRecruiter
-- data: `{job_title, required_skills[], preferred_skills[], responsibilities[], qualifications[], technologies[], experience_requirements}`
+## 6. Acceptance Criteria
+- Resume with no Experience section/entries: 0 rows, "Total: 0 yrs", level badge Fresher, no warning, no "Professional Experience" row.
+- The Cohyve resume: exactly 1 row, company "Cohyve", years 0.17, caption "May 2025 – Jun 2025 · 2 months", total 0.17 yrs, level Fresher. No bullet, date or role text appears in the company name.
+- Resume with 2+ jobs: one row each, and total equals their sum (e.g. 1.5 + 2 = 3.5 yrs, level Mid).
+- A current job ends today's month and updates the total.
+- Date formats from section 3 all parse (test each).
+- An unparseable entry shows a row warning, with years empty, not 0.
+- Editing years or deleting a row updates the total and level at once.
+- Re-extraction fully replaces the experience data.
+- Tested with at least 6 resumes: none, one job, 3+ jobs, a current job, year-only dates, and a role listed under the company in italics.
 
-Mapping: interviewId, matchedSkills[], partialSkills[], missingSkills[], verificationPriorities[{item, reason, priority}], createdAt
-
-InterviewPlan: interviewId, items[{order, category, topic, reason, priority, relatedProject?}], createdAt
-- category enum, in this order: `project`, `jd_technology`, `claim_verification`, `remaining_jd_requirement`, `other_resume_skill`
-- Plan is a guide, not a script.
-
-Add to Interview: `resumeId`, `jdId`, `analysisStatus` (`none|extracting|mapped|planned|failed`).
-
-## API (/api, RECRUITER role + ownership checks)
-- POST /interviews/:id/resume (multipart `file`)
-- POST /interviews/:id/jd (multipart `file`)
-- POST /interviews/:id/extract → runs Gemini extraction for resume and JD (parallel), saves validated JSON
-- POST /interviews/:id/map → Resume–JD mapping via Gemini (input: stored JSON, not PDFs)
-- POST /interviews/:id/plan → generates the plan via Gemini from resume + JD + mapping
-- GET /interviews/:id/analysis → {resume, jd, mapping, plan, analysisStatus}
-- PATCH /interviews/:id/resume/data and /jd/data → recruiter corrections (validate against the same schema; set editedByRecruiter=true)
-- PATCH /interviews/:id/plan → reorder/edit/remove plan items
-
-Re-running map/plan after edits must overwrite the old results.
-
-## Services (modular)
-`services/gemini.service.js` (client + retry), `services/resumeExtraction.service.js`, `services/jdExtraction.service.js`, `services/mapping.service.js`, `services/planning.service.js`; prompts in `prompts/*.js`; schemas in `schemas/*.js`.
-
-## Prompts
-- Resume: extract candidate info, education, skills, projects, technologies, experience, responsibilities, certifications, claims. "Extract only what is stated in the document; do not infer or invent. Use empty values if absent."
-- JD: extract job title, required skills, preferred skills, responsibilities, qualifications, technologies, experience requirements. Same no-invention rule.
-- Mapping: input resumeData + jdData; output matched, partial and missing skills plus verification priorities (claims needing verification, high-priority topics).
-- Planning: output items in the category order above, with reasons. Projects first.
-
-## Frontend
-- Interview detail page (recruiter): steps Upload → Analysis → Mapping → Plan
-- Two upload dropzones (resume, JD): PDF-only validation, progress, replace file
-- "Analyze" button → processing indicator/skeleton; poll `analysisStatus`
-- Review screen with tabs: Resume Data | JD Requirements | Mapping | Plan
-  - Editable fields for extracted values (inline edit, save, "edited" badge)
-  - Mapping shown as matched / partial / missing groups
-  - Plan as an ordered list; drag-to-reorder or up/down; remove item
-- "Regenerate Mapping & Plan" button after edits
-- Specific errors, e.g. "Unable to process the resume PDF. Please upload a readable PDF and try again."
-
-## Constraints
-- Do not touch Phase 1 auth/status logic beyond adding the fields above
-- Don't read or refactor unrelated files
-- No interview-time or live-state code
-
-## Done when
-1. Recruiter uploads a resume PDF and a JD PDF to an interview; non-PDF/oversized files are rejected with a specific message
-2. Extract returns schema-valid JSON stored in Mongo; invalid output is retried once, then fails clearly
-3. Review screen shows the resume, JD, mapping and plan; recruiter edits persist and set `editedByRecruiter`
-4. Mapping and plan are saved to Mongo; the plan follows the required category order
-5. No code path uses OCR/NLP keyword extraction; no API key in the client; PDFs not publicly accessible
-
-## Process
-List the new files first, then implement backend → frontend. Test with one sample resume and one sample JD. Edit existing code with minimal diffs; do not read unrelated files.
+## 7. Constraints
+- LLM-first with direct PDF input. No OCR, spaCy, SkillNER or keyword extraction. Sanitization and date parsing are plain code on the extracted JSON, not extraction.
+- Do not change auth, scheduling, upload, project extraction, mapping logic or the Plan tab UI beyond consuming the corrected level.
+- Edit existing code with minimal diffs; do not read unrelated files.
