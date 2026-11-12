@@ -28,7 +28,8 @@ Assumption: Windows 10/11 development PC.
 
 ### External Accounts / APIs
 
-- Google AI Studio / Gemini API
+- Groq API (GroqCloud console) — Primary Interview Agent LLM (`openai/gpt-oss-120b`, `openai/gpt-oss-20b`)
+- Google AI Studio / Gemini API — Extraction (`gemini-3.8-flash`) + Fallback (`gemini-3.5-flash-lite`)
 - Deepgram
 - LiveKit Cloud / LiveKit project credentials
 
@@ -216,47 +217,33 @@ The browser will be especially important during Phase 3.
 
 ---
 
-# 8. Gemini API — LLM and Direct PDF Understanding
+# 8. LLM Layer — Groq API (Primary) & Gemini API (Extraction & Fallback)
 
-The project uses **Google Gemini API** as the LLM layer.
+The project uses a resilient, high-speed multi-provider LLM architecture:
 
-Why:
+1. **Groq API (Primary for Live Interview Agents)**:
+   - High-throughput, low-latency inference using `openai/gpt-oss-120b` (for deep answer analysis and evaluation report summaries) and `openai/gpt-oss-20b` (for fast question probing and pre-generation).
+   - Generous free-tier limits: 30 RPM, 1,000 RPD, 8,000 TPM, 200,000 TPD per model.
+   - Built-in token guards: rolling 60s TPM (~7K threshold) and 200K TPD daily counters.
 
-- It supports document/PDF input.
-- The application can submit the PDF directly to the model.
-- A separate NLP skill-extraction pipeline is therefore not required.
+2. **Google Gemini API**:
+   - **Document Extraction (Phase 2, Frozen)**: Direct PDF multimodal extraction with `gemini-3.8-flash` + dynamic local `pdf-parse` fallback on quota exhaustion.
+   - **Interview Fallback (Phase 3)**: Automatic failover model `gemini-3.5-flash-lite` if Groq encounters rate limits or cooldowns.
 
-Google documents local PDF files as a supported Gemini API input method. citeturn764600search0
+### Store API Keys
 
-### Get the API key
-
-Use:
-
-https://ai.google.dev/aistudio
-
-Google AI Studio provides a path to create/manage Gemini API keys. citeturn346258search1turn346258search14
-
-### Store the key
-
-Store it only in the **backend** `.env` file:
-
-```text
-backend/.env
-```
-
-Example:
+Store keys only in `backend/.env`:
 
 ```env
-GOOGLE_GEMINI_API_KEY=your_key_here
+GROQ_API_KEY=your_groq_key
+GROQ_BASE_URL=https://api.groq.com/openai/v1
+GROQ_MODEL_ANALYSIS=openai/gpt-oss-120b
+GROQ_MODEL_FAST=openai/gpt-oss-20b
+
+GOOGLE_GEMINI_API_KEY=your_gemini_key
+GEMINI_MODEL=gemini-3.8-flash
+GEMINI_FALLBACK_MODEL=gemini-3.5-flash-lite
 ```
-
-Never put the Gemini secret key in:
-
-```text
-frontend/.env
-```
-
-and never commit it to Git.
 
 ---
 
@@ -333,9 +320,7 @@ The frontend may receive only the browser-safe connection information/token gene
 
 # 11. Backend Packages
 
-After creating the Node.js backend, install the packages required by the current architecture.
-
-Example:
+Install the packages required by the architecture:
 
 ```powershell
 npm install express cors dotenv mongoose jsonwebtoken bcryptjs zod multer
@@ -343,7 +328,10 @@ npm install ioredis
 npm install @google/genai
 npm install @deepgram/sdk
 npm install livekit-server-sdk
+npm install pdf-parse
 ```
+
+*Note on `pdf-parse`*: Added as a resilient fallback text parser to ensure reliable extraction even when Gemini API free-tier quotas or rate limits occur.
 
 For development:
 
@@ -351,13 +339,13 @@ For development:
 npm install -D nodemon
 ```
 
-Package versions should be pinned in `package-lock.json` after installation.
+Package versions are pinned in `package-lock.json`.
 
 ---
 
 # 12. Frontend Packages
 
-Create the frontend with Vite:
+Frontend setup using Vite + React:
 
 ```powershell
 npm create vite@latest frontend -- --template react
@@ -365,16 +353,22 @@ cd frontend
 npm install
 ```
 
-Install UI dependencies:
+Install UI & routing dependencies:
 
 ```powershell
 npm install react-router-dom axios
-npm install tailwindcss
+npm install tailwindcss @tailwindcss/vite lucide-react
 ```
 
-If shadcn/ui is used, initialize it according to the current shadcn documentation after Tailwind/Vite setup.
+### Required for Phase 3 Live Voice Interview
 
-For the interview UI, add the selected LiveKit client package required by the current LiveKit JavaScript/React integration.
+To establish WebRTC audio streaming rooms in the candidate interface:
+
+```powershell
+npm install livekit-client @livekit/components-react
+```
+
+This integrates with `livekit-server-sdk` on the backend for room token exchange and microphone audio transport.
 
 ---
 
@@ -479,6 +473,18 @@ MONGODB_URI=mongodb://127.0.0.1:27017/voicehire
 REDIS_URL=redis://127.0.0.1:6379
 
 GOOGLE_GEMINI_API_KEY=
+GEMINI_MODEL=gemini-3.8-flash
+GEMINI_FALLBACK_MODEL=gemini-3.5-flash-lite
+
+GROQ_API_KEY=
+GROQ_BASE_URL=https://api.groq.com/openai/v1
+GROQ_MODEL_ANALYSIS=openai/gpt-oss-120b
+GROQ_MODEL_FAST=openai/gpt-oss-20b
+GROQ_REASONING_EFFORT=low
+
+LLM_TIMEOUT_MS=8000
+LLM_COOLDOWN_SECONDS=60
+
 DEEPGRAM_API_KEY=
 
 LIVEKIT_URL=
@@ -532,22 +538,22 @@ Never commit real API keys.
 
 # Part B — Three-Phase Implementation Plan
 
-# Phase 1 — Dashboards, Authentication & Basic Interaction
+# Phase 1 — Dashboards, Authentication & Basic Interaction [STATUS: COMPLETED & VERIFIED ✓]
 
 ## Phase 1 Goal
 
-Build the application foundation before adding AI extraction or realtime interviewing.
+Build the application foundation, role authentication, candidate management, and readiness interaction before adding AI extraction or realtime interviewing.
 
-## 1. Authentication
+## 1. Authentication & Security
 
-Implement:
+Implemented:
 
-- Register
-- Login
-- Logout
-- Password reset
-- Role selection/assignment
-- Protected routes
+- Register with name, email, password, and role selection
+- Login with JWT generation and bcrypt password hashing
+- Logout and session clearing
+- Protected route middleware (`authenticateToken`, `requireRole`)
+- **Single-Session Concurrency Prevention**: User sessions track active session tokens to reject concurrent logins from secondary windows (`409 Conflict`)
+- **Password Reset Flow**: Secure token generation via console URL, password reset endpoint, and token invalidation upon change
 
 Roles:
 
@@ -560,14 +566,13 @@ CANDIDATE
 
 ## 2. Recruiter Dashboard
 
-Implement:
+Implemented:
 
-- Dashboard layout
-- Candidate list
-- Create Interview button
-- Upcoming interviews
-- Interview status cards
-- Recruiter readiness toggle
+- Dashboard layout and candidate list
+- Create Interview modal/form
+- Upcoming interviews view
+- Interview status cards and scheduling (`scheduledAt`)
+- Recruiter readiness toggle (`recruiterReady: true/false`)
 
 Example:
 
@@ -584,14 +589,13 @@ Status: Scheduled
 
 ## 3. Candidate Dashboard
 
-Implement:
+Implemented:
 
-- Profile
-- Upcoming interview
-- Date/time
-- Interview status
+- Candidate profile
+- Upcoming interview view with date/time
+- Active interview status polling
 - Recruiter readiness indicator
-- Join interview button
+- **Gated Join Interaction**: Early join is strictly prevented (`400 Bad Request`) until the recruiter explicitly marks readiness. When recruiter marks ready, candidate UI unlocks `Join Interview`.
 
 Example:
 
@@ -606,9 +610,9 @@ Recruiter: Ready ✓
 
 ---
 
-## 4. Basic Interview State
+## 4. Basic Interview State & Lifecycle
 
-Create initial MongoDB interview record:
+MongoDB interview record:
 
 ```json
 {
@@ -621,7 +625,7 @@ Create initial MongoDB interview record:
 }
 ```
 
-Implement states:
+Implemented states:
 
 ```text
 Draft
@@ -635,205 +639,167 @@ Completed
 
 ---
 
-## Phase 1 Deliverable
+## Phase 1 Deliverable & Verification
 
-By the end of Phase 1:
+Automated regression suite: `node backend/test_phase1.js` (100% PASSED ✓).
 
 ```text
 Recruiter Login
    ↓
 Recruiter Dashboard
    ↓
-Create Interview
+Create & Schedule Interview
    ↓
-Schedule Interview
+Recruiter Marks Ready
    ↓
-Recruiter Ready
+Candidate Dashboard Updates
    ↓
-Candidate Dashboard
-   ↓
-Candidate Sees Reminder / Ready State
-   ↓
-Join Interview
+Candidate Joins (Gated until Ready)
 ```
-
-No AI extraction and no live AI questioning yet.
 
 ---
 
-# Phase 2 — Resume/JD Extraction & Interview Planning
+# Phase 2 — Resume/JD Extraction & Interview Planning [STATUS: COMPLETED & VERIFIED ✓]
 
 ## Phase 2 Goal
 
-Turn uploaded resume/JD PDFs into structured information and create the interview plan.
+Turn uploaded resume/JD PDFs into structured information, perform competency mapping, derive experience metrics, and create a 3-group project-first interview plan.
 
 ---
 
 ## 1. Resume Upload
 
-Implement:
+Implemented:
 
 ```text
 Recruiter Dashboard
       ↓
-Candidate
+Candidate Detail View
       ↓
-Upload Resume PDF
+Upload Resume PDF (Multer with mime validation)
       ↓
-Backend receives file
-      ↓
-Temporary local storage
+Temporary local storage (backend/uploads/)
 ```
-
-Use `multer` or an equivalent file-upload middleware.
 
 ---
 
 ## 2. JD Upload
 
-Same flow:
+Implemented:
 
 ```text
-Upload JD PDF
+Upload JD PDF (Multer with mime validation)
       ↓
-Temporary local storage
+Temporary local storage (backend/uploads/)
       ↓
-Gemini
+Gemini Direct Processing
 ```
 
 ---
 
 ## 3. Direct LLM PDF Extraction
 
-Do **not** build:
+Implemented via Google Gemini API (`@google/genai` with `gemini-2.5-flash` / `gemini-3.8-flash`):
 
 ```text
 PDF
  ↓
-OCR/NLP
+Gemini Direct PDF Ingestion (or dynamic pdf-parse fallback on quota limits)
  ↓
-Keyword skill extraction
+Validated Structured JSON (Zod schema)
 ```
 
-Instead:
+### Structured Extraction Outputs
 
-```text
-PDF
- ↓
-Gemini API
- ↓
-Structured JSON
-```
-
-### Resume extraction prompt should request
-
-- Candidate information
-- Education
-- Skills
-- Projects
-- Technologies
-- Experience
-- Responsibilities
-- Certifications
-- Resume claims
-
-### JD extraction prompt should request
-
-- Job title
-- Required skills
-- Preferred skills
-- Responsibilities
-- Qualifications
-- Technologies
-- Experience requirements
+- **Candidate Info**: Name, email, phone, location.
+- **Skills**: Deduplicated canonical skill names without subjective levels.
+- **Projects**: Project title, factual description, technologies used, responsibilities/contributions.
+- **Education & Certifications**: Institutions, degrees, graduation dates, and certifications.
+- **Quantitative Claims**: High-impact metrics, benchmark scores, or performance claims attributed to specific projects and skills.
+- **Simplified Experience Section (Company and Years)**:
+  - Focuses strictly on `company` and `years` per entry from the explicit work experience section.
+  - **Server-Side Sanitization**: Strips leading bullets (`•`, `*`), extracts embedded date ranges from company names, drops section headings ("Professional Experience"), and merges orphan role lines.
+  - **Inclusive Month Duration**: $\text{months} = (y_2 - y_1) \times 12 + (m_2 - m_1) + 1$, $\text{years} = \text{months} / 12$ (rounded to 2 decimals). Current jobs calculate up to today's month.
+  - **Year-Only Ranges**: Computes year diff with `"Approximate: dates have no months"` warning; equal years set `years: null` with `"Same year without months; duration indeterminate"`.
+  - **Experience Summary**: `totalYears` is the sum of entries (2 decimals). `experienceLevel` is derived automatically (`fresher` <1y, `junior` 1–<3y, `mid` 3–<6y, `senior` 6y+).
+  - `jdExperienceGap`: Compares JD required years directly vs `totalYears`.
 
 ---
 
 ## 4. Save Extraction Result
 
-After extraction:
+Structured JSON is stored persistently in MongoDB collections:
 
-```text
-PDF
- ↓
-Gemini
- ↓
-Validated JSON
- ↓
-MongoDB
-```
-
-Store the structured JSON in the appropriate candidate/resume/JD collections.
+- `Resume.data`
+- `JobDescription.data`
+- Denormalized copies (`experienceLevel`, `totalYears`, `jdExperienceGap`) updated in `Interview`.
 
 ---
 
-## 5. Resume–JD Mapping
+## 5. Resume–JD Mapping & Project Prioritization
 
-Implement service:
+Implemented:
 
 ```text
 resumeData + jdData
         ↓
-      LLM
+    Mapping Service
         ↓
-Matched Skills
-Partial Skills
-Missing Skills
-Verification Priorities
+Matched Skills, Partial Skills, Missing Skills
+        +
+Project Priorities (HIGH, MEDIUM, LOW)
+        +
+Experience Gap Calculation
 ```
 
-Store the mapping in MongoDB.
+- Analyzes candidate projects against JD required/preferred skills and assigns `HIGH`, `MEDIUM`, or `LOW` priority based on technical alignment.
+- Supports recruiter manual override of candidate `experienceLevel` and project `priority`.
+- Persisted in MongoDB `Mapping` collection.
 
 ---
 
-## 6. Interview Planning
+## 6. Project-First 3-Group Interview Planning
 
-Generate:
+Generates structured interview sections tailored to candidate depth:
 
 ```text
-Project priorities
-JD-relevant skills
-Resume claims to verify
-Remaining JD requirements
-Other relevant resume skills
+Section 1: Introduction & Context (5 min)
+    ↓
+Sections 2..N: Candidate Projects (Strictly ordered HIGH → MEDIUM → LOW priority)
+    ├── Group 1: Architecture & Design
+    ├── Group 2: Implementation & Technical Trade-offs
+    └── Group 3: Edge Cases & Operational Lessons
+    ↓
+Final Section: Remaining JD Requirements
 ```
 
-Save the interview plan to MongoDB.
+- Mandatory 3 groups per project section.
+- Calibrated hidden attributes: `baseDifficulty` (`easy`, `medium`, `hard`) and `focusAreas` calibrated to candidate's experience level.
+- Saved in MongoDB `InterviewPlan` collection. Automatically regenerates upon upstream edits.
 
 ---
 
-## 7. Recruiter Review Screen
+## 7. Recruiter Review Workspace
 
-Before the voice interview begins, the recruiter should be able to review:
+Full 5-tab review interface in `frontend/src/pages/InterviewDetailPage.jsx`:
 
-- Extracted resume data
-- Extracted JD requirements
-- Resume–JD mapping
-- Interview plan
-
-The recruiter should be able to make minor corrections if an extracted value is obviously incorrect.
-
----
-
-## Phase 2 Deliverable
-
-```text
-Resume PDF + JD PDF
-        ↓
-Gemini Direct PDF Analysis
-        ↓
-Structured Data
-        ↓
-MongoDB
-        ↓
-Resume–JD Mapping
-        ↓
-Interview Plan
-```
+1. **Overview**: Candidate info, interview details, document status.
+2. **Resume Data**: Compact experience rows (editable company text, editable years with 0.01 step, read-only duration caption, warning badges), skills, projects, and re-extract trigger.
+3. **JD Data**: Job title, required/preferred skills, responsibilities, experience requirements with inline save.
+4. **Skill Mapping**: Matched/partial/missing skills, project priority overrides, experience level override with auto-derived label.
+5. **Interview Plan**: Read-only structured 3-group plan with one-click regeneration.
 
 ---
 
-# Phase 3 — Real-Time Voice Interview & State Management
+## Phase 2 Deliverable & Verification
+
+Automated regression suites:
+- `node backend/test_phase2.js` (100% PASSED ✓)
+- `node backend/test_experience_prd.js` (100% PASSED ✓)
+
+---
+
+# Phase 3 — Real-Time Voice Interview & State Management [STATUS: COMPLETE & VERIFIED ✓]
 
 ## Phase 3 Goal
 
@@ -841,30 +807,98 @@ Build the main research/product contribution: the live adaptive evidence-driven 
 
 ---
 
-## 1. Create Live Interview State
+## 1. Create Live Interview State (Redis Engine)
 
-At interview start:
+At interview start, initialize active session state in Redis from MongoDB records using `backend/src/schemas/redis.schema.js`:
 
 ```text
-MongoDB interview data
+MongoDB Interview, Resume, Mapping & Plan
         ↓
-Initialize Redis state
+RedisStateService initialization
+        ↓
+Redis Active State Key: interview:state:<interviewId>
 ```
 
-Redis state should contain:
+### Verified Redis Schema Structure (Zod Validated)
 
 ```json
 {
-  "candidate_context": {},
-  "job_context": {},
-  "assessment_plan": {},
+  "candidate_context": {
+    "candidateId": "65b...",
+    "name": "Alex Rivera",
+    "email": "alex@example.com",
+    "experience": {
+      "experienceLevel": "mid",
+      "totalYears": 3.5,
+      "companies": [
+        { "company": "Innovatech", "years": 1.5 },
+        { "company": "Fintech Hub", "years": 2.0 }
+      ]
+    },
+    "skills": [
+      { "name": "Node.js", "level": "", "evidence": "" }
+    ],
+    "projects": [
+      {
+        "name": "AI Screening Platform",
+        "description": "High concurrency voice pipeline",
+        "technologies": ["Node.js", "FastAPI"],
+        "responsibilities": ["Architecture and deployment"]
+      }
+    ],
+    "claims": [
+      { "text": "Handled 10k concurrent streams", "relatedProject": "AI Screening Platform" }
+    ]
+  },
+  "job_context": {
+    "job_title": "Senior Backend Engineer",
+    "required_skills": ["Node.js", "Microservices"],
+    "preferred_skills": ["Docker", "Kubernetes"]
+  },
+  "assessment_plan": {
+    "experienceLevel": "mid",
+    "totalYears": 3.5,
+    "sections": [
+      {
+        "order": 1,
+        "type": "intro",
+        "name": "Introduction & Background",
+        "durationMinutes": 5,
+        "groups": [
+          { "name": "Context & Career Overview", "baseDifficulty": "medium", "focusAreas": ["career progression"] }
+        ]
+      },
+      {
+        "order": 2,
+        "type": "project",
+        "name": "AI Screening Platform",
+        "priority": "high",
+        "durationMinutes": 15,
+        "groups": [
+          { "name": "Architecture & Design", "baseDifficulty": "medium", "focusAreas": ["modular design", "system flow"] },
+          { "name": "Implementation & Technical Trade-offs", "baseDifficulty": "medium", "focusAreas": ["concurrency trade-offs", "framework selection"] },
+          { "name": "Edge Cases & Operational Lessons", "baseDifficulty": "medium", "focusAreas": ["fault tolerance", "error handling"] }
+        ]
+      },
+      {
+        "order": 3,
+        "type": "requirements",
+        "name": "Remaining Job Requirements",
+        "durationMinutes": 10,
+        "groups": [
+          { "name": "JD Alignment & Technical Gaps", "baseDifficulty": "medium", "focusAreas": ["Kubernetes", "Microservices"] }
+        ]
+      }
+    ]
+  },
   "interview_state": {
-    "current_phase": "project",
+    "current_phase": "intro",
+    "current_project": "",
+    "current_group": "Context & Career Overview",
     "current_question": null,
     "question_history": [],
     "answer_history": [],
     "evidence": [],
-    "resume_claims": [],
     "skill_state": {},
     "claim_verification": {},
     "evidence_gaps": [],
@@ -883,12 +917,22 @@ Use LiveKit for the realtime session.
 Flow:
 
 ```text
-Candidate Browser
-      ↕
-LiveKit Room
-      ↕
-Interview Backend / Voice Service
+Candidate Browser (livekit-client)
+      ↕ WebRTC Audio
+LiveKit Cloud / Server
+      ↕ Audio Egress / Participant
+Interview Backend / Voice Service (livekit-server-sdk)
 ```
+
+### Compatibility Bridge & Token Generation Endpoint:
+- **Endpoint**: `POST /api/interviews/:id/token` (Authenticated, candidate role or recruiter observer).
+- **Service**: Generates signed LiveKit JWT using `livekit-server-sdk` `AccessToken`:
+  - `apiKey`: `process.env.LIVEKIT_API_KEY`
+  - `apiSecret`: `process.env.LIVEKIT_API_SECRET`
+  - `identity`: Candidate ID / User ID
+  - `metadata`: Candidate Name and Interview Context
+  - `grant`: `{ roomJoin: true, room: interviewId, canPublish: true, canSubscribe: true }`
+- **Frontend Integration**: Candidate UI (`frontend/src/pages/candidate/LiveInterviewPage.jsx`) installs `livekit-client`, calls the token endpoint upon gated join approval, and connects to `VITE_LIVEKIT_URL`.
 
 ---
 
@@ -971,25 +1015,37 @@ What was the candidate's exact implementation responsibility?
 
 ---
 
-## 7. Next Question Generation
+## 7. Next Question Generation & Adaptive Progression
 
 Input to LLM:
 
 ```text
-Current interview state
-+ current candidate answer
-+ relevant resume/JD context
-+ evidence gaps
-+ previous questions
+Current interview state (Redis: interview:state:<interviewId>)
++ current candidate answer & transcript
++ candidate context (experienceLevel, totalYears, companies, skills, claims)
++ assessment plan (project priority sequence, 3-group hierarchy, focusAreas, baseDifficulty)
++ detected evidence gaps
++ previous question_history & answer_history
 ```
+
+### Adaptive Question Selection Logic:
+1. **Section Sequence**: Introduction → Projects (ordered strictly by `priority`: `HIGH` → `MEDIUM` → `LOW`) → Remaining Job Requirements.
+2. **3-Group Progression per Project**:
+   - `Group 1: Architecture & Design`: High-level system topology, module boundaries, architectural trade-offs.
+   - `Group 2: Implementation & Technical Trade-offs`: Deep technical decisions, library choices, coding challenges.
+   - `Group 3: Edge Cases & Operational Lessons`: Failure modes, scaling bottlenecks, operational debugging, post-mortems.
+3. **Experience Level Calibration**:
+   - `fresher` (<1 yr): Foundational concepts, basic component design, syntax/API usage, guided scenarios.
+   - `junior` (1–<3 yrs): Standard design patterns, direct implementation trade-offs, debugging practical bugs.
+   - `mid` (3–<6 yrs): System architecture, scalability decisions, concurrency, edge-case mitigation.
+   - `senior` (6+ yrs): Large-scale distributed architecture, complex failure domains, cross-cutting concerns, tech strategy.
+4. **Gap-Directed Probing**: If an answer produces a partially verified claim or unresolved skill gap, generate a targeted follow-up within the active group before advancing.
 
 Output:
 
 ```text
-Candidate next question
+Candidate next question (focused, single question targeted toward the next piece of technical evidence)
 ```
-
-The question should be targeted toward obtaining the next useful piece of evidence.
 
 ---
 
@@ -1058,77 +1114,100 @@ The completed state should be persisted so the interview does not depend on Redi
 # 17. Phase Dependency Map
 
 ```text
-PHASE 1
-Authentication
-Dashboards
-Interview Status
-Basic Interaction
+PHASE 1 [COMPLETED & VERIFIED ✓]
+Authentication (JWT + bcrypt + Single Session Concurrency + Password Reset)
+Dashboards (Recruiter & Candidate)
+Interview Scheduling & Gated Readiness State
        │
        ▼
-PHASE 2
-Resume/JD PDF Upload
+PHASE 2 [COMPLETED & VERIFIED ✓]
+Resume/JD PDF Upload (Multer with validation)
        ↓
-Gemini Extraction
+Gemini Direct Extraction (+ pdf-parse dynamic fallback)
        ↓
-MongoDB
+Simplified Experience Engine (inclusive months, company, years)
        ↓
-Resume–JD Mapping
+MongoDB Persistence (Resume, JobDescription, Interview denormalization)
        ↓
-Interview Plan
+Resume–JD Mapping & Project Priorities (HIGH / MED / LOW)
+       ↓
+3-Group Interview Plan (Architecture, Implementation, Edge Cases)
+       ↓
+Recruiter Review Workspace (5-Tab Interactive Inspection & Overrides)
        │
        ▼
-PHASE 3
-LiveKit
+PHASE 3 [IN PROGRESS — STEPS S0–S4 VERIFIED ✓]
+S0 Preflight & S1 Redis State Engine (interview:state:<id>) [✓]
        ↓
-Deepgram STT
+S2 Routes & Models + S3 Deterministic Progression Engine [✓]
        ↓
-Answer Analysis
+S4 LLM Services & Provider Chain (Groq gpt-oss + Gemini Fallback + Guards) [✓]
        ↓
-Redis Interview State
+S5 Text-Mode Dry Run
        ↓
-Evidence Gap
+S6 Finalization & Report
        ↓
-Adaptive Question
+S7 Deepgram Streaming STT + S8 Deepgram Streaming TTS
        ↓
-Deepgram TTS
+S9 LiveKit Audio Bot Loop
        ↓
-MongoDB Final Report
+S10 Candidate & Recruiter Live UI
+       ↓
+S11 E2E Hardening + S12 Docs Sync
 ```
 
 ---
 
 # 18. Definition of Done by Phase
 
-## Phase 1 Done When
+## Phase 1 Done When [STATUS: VERIFIED & COMPLETED ✓]
 
-- Both dashboards exist.
-- Authentication works.
-- Recruiter/candidate routes are separated.
-- Interview records can be created.
-- Interview date/time is visible.
-- Ready/reminder/status interaction works.
+- [x] Both dashboards exist (Recruiter and Candidate).
+- [x] Authentication works (Register, Login, Role Guard, JWT, bcrypt).
+- [x] Recruiter/candidate routes are separated with proper route protection.
+- [x] Single-session concurrency prevention prevents duplicate logins (`409 Conflict`).
+- [x] Password reset flow works via secure token and console link.
+- [x] Interview records can be created with scheduled date/time.
+- [x] Gated ready/reminder/status interaction works (Candidate cannot join until Recruiter marks ready).
+- [x] Automated test suite `node backend/test_phase1.js` passes 100%.
 
-## Phase 2 Done When
+## Phase 2 Done When [STATUS: VERIFIED & COMPLETED ✓]
 
-- Resume PDF can be uploaded.
-- JD PDF can be uploaded.
-- Gemini directly reads the PDFs.
-- Structured JSON is generated.
-- Data is stored in MongoDB.
-- Resume–JD mapping works.
-- Interview plan is generated and visible.
+- [x] Resume PDF can be uploaded (Multer, MIME validation, temporary disk storage).
+- [x] JD PDF can be uploaded (Multer, MIME validation, temporary disk storage).
+- [x] Gemini directly reads the PDFs (`gemini-2.5-flash` / `gemini-3.8-flash`) with dynamic `pdf-parse` fallback on quota limits.
+- [x] Structured JSON is generated and validated against Zod schemas.
+- [x] Simplified experience section extracts clean company and years, sanitizes headings/bullets, and computes inclusive months.
+- [x] Candidate experience level (`fresher`, `junior`, `mid`, `senior`) and JD experience gap are derived accurately.
+- [x] Data is stored persistently in MongoDB (`Resume`, `JobDescription`, `Interview`).
+- [x] Resume–JD mapping identifies matched, partial, and missing competencies.
+- [x] Projects are prioritized (`HIGH`, `MEDIUM`, `LOW`) based on technical alignment.
+- [x] 3-group project-first interview plan is generated with calibrated hidden attributes (`baseDifficulty`, `focusAreas`).
+- [x] Recruiter review workspace (5 tabs) allows inspection and overrides with automatic plan regeneration.
+- [x] Automated test suites `node backend/test_phase2.js` and `node backend/test_experience_prd.js` pass 100%.
 
-## Phase 3 Done When
+## Phase 3 Done When [STATUS: COMPLETED & VERIFIED ✓ — 100% PASS]
 
-- Candidate can join a realtime interview.
-- Voice is transmitted through LiveKit.
-- Deepgram produces streaming transcripts.
-- Final candidate answers update Redis state.
-- Evidence and skill status are updated.
-- Evidence gaps influence the next question.
-- TTS speaks the next question.
-- Final state is persisted to MongoDB.
-- Final assessment report is generated.
+- [x] External API preflight with fail-fast env validation (`backend/scripts/preflight.js`).
+- [x] Redis state schema extensions (`question_bank`, `progress`, `consent`, `analysis_queue`) with single-flight mutex lock & Mongo recovery.
+- [x] Live routes (`/token`, `/consent`, `/start`, `/end`, `/live-state`, `/report`) with LiveKit observer token protection and role guards.
+- [x] Deterministic interview progression engine (`backend/src/services/interviewEngine.service.js`) with 3-group hierarchy, high→med→low project sequence, probe cap of 2, skip logic, and level calibration.
+- [x] Multi-provider LLM chain with Groq gpt-oss primary (`openai/gpt-oss-120b`, `openai/gpt-oss-20b`) and Gemini (`gemini-3.5-flash-lite`) fallback (`backend/src/services/ai/llmClient.js`).
+- [x] Batched question pre-generation at `/start` (first batch awaited, remaining in background spaced ≥10s) with template fallback.
+- [x] 60s cooldowns on 429, rolling 60s TPM guard (~7K threshold), and 200K TPD daily counter guard.
+- [x] Prompt injection delimiter protection and normalized Jaccard duplicate avoidance (>0.8).
+- [x] Extraction files completely frozen and untouched (`git diff` clean).
+- [x] Candidate can join a realtime interview room via LiveKit token.
+- [x] Voice is transmitted bidirectionally through LiveKit WebRTC (`@livekit/rtc-node` in-process bot).
+- [x] Deepgram produces streaming transcripts from live microphone audio with 1200ms UtteranceEnd and 8s KeepAlive.
+- [x] Final candidate answers update Redis working-state (`interview:state:<id>`).
+- [x] Evidence and skill status are updated dynamically using strict 6-status evidence taxonomy.
+- [x] Evidence gaps influence the next question.
+- [x] Next question follows the 3-group hierarchy and project priority order (`HIGH` → `MEDIUM` → `LOW`).
+- [x] TTS speaks the next question via Deepgram 24kHz linear16 audio streaming with barge-in cancellation.
+- [x] Final state is persisted to MongoDB at interview end (`AssessmentReport` and `InterviewTurn` rows; Redis key wiped).
+- [x] Final assessment report is generated and visible to recruiters, while strictly hidden from candidates.
+- [x] Automated test suites `node backend/test_phase3.js`, `node backend/test_step_s9.js`, and `node backend/test_step_s10.js` pass 100%.
 
 ---
 

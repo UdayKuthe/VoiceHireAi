@@ -84,7 +84,15 @@ export const api = {
     return request(`/api/interviews/${interviewId}/plan`, { method: 'PATCH', body });
   },
   overrideProjectPriority: (interviewId, { projectName, priority }) => request(`/api/interviews/${interviewId}/project-priority`, { method: 'PATCH', body: { projectName, priority } }),
-  overrideExperienceLevel: (interviewId, level) => request(`/api/interviews/${interviewId}/experience-level`, { method: 'PATCH', body: { level } })
+  overrideExperienceLevel: (interviewId, level) => request(`/api/interviews/${interviewId}/experience-level`, { method: 'PATCH', body: { level } }),
+
+  // Phase 3 Live Interview & Observer APIs
+  submitConsent: (interviewId) => request(`/api/interviews/${interviewId}/consent`, { method: 'POST' }),
+  getLiveToken: (interviewId) => request(`/api/interviews/${interviewId}/token`, { method: 'POST' }),
+  startInterviewSession: (interviewId) => request(`/api/interviews/${interviewId}/start`, { method: 'POST' }),
+  getLiveState: (interviewId) => request(`/api/interviews/${interviewId}/live-state`, { method: 'GET' }),
+  endInterview: (interviewId) => request(`/api/interviews/${interviewId}/end`, { method: 'POST' }),
+  getAssessmentReport: (interviewId) => request(`/api/interviews/${interviewId}/report`, { method: 'GET' })
 };
 
 export default api;

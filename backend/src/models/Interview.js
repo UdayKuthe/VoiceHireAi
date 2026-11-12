@@ -7,6 +7,8 @@ export const INTERVIEW_STATUSES = [
   'recruiter_ready',
   'candidate_ready',
   'live',
+  'paused',
+  'partial',
   'completed',
   'cancelled'
 ];
@@ -68,6 +70,29 @@ const interviewSchema = new mongoose.Schema(
       type: String,
       enum: ['fresher', 'junior', 'mid', 'senior', ''],
       default: ''
+    },
+    totalYears: {
+      type: Number,
+      default: 0
+    },
+    jdExperienceGap: {
+      type: Number,
+      default: null
+    },
+    live: {
+      startedAt: { type: Date, default: null },
+      endedAt: { type: Date, default: null },
+      consentAt: { type: Date, default: null },
+      endedBy: {
+        type: String,
+        enum: ['candidate', 'recruiter', 'system', ''],
+        default: ''
+      }
+    },
+    questionBank: {
+      type: Map,
+      of: mongoose.Schema.Types.Mixed,
+      default: () => new Map()
     }
   },
   {

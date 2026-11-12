@@ -1,9 +1,12 @@
 import app from './app.js';
-import { env } from './config/env.js';
+import { env, validateEnv } from './config/env.js';
 import { connectDB } from './config/db.js';
 import { User } from './models/User.js';
 
 const startServer = async () => {
+  // Fail fast if required environment variables are missing
+  validateEnv(true);
+
   await connectDB();
 
   // Invalidate any leftover active sessions from prior server runs

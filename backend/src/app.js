@@ -3,6 +3,7 @@ import cors from 'cors';
 import authRoutes from './routes/authRoutes.js';
 import recruiterRoutes from './routes/recruiterRoutes.js';
 import candidateRoutes from './routes/candidateRoutes.js';
+import interviewLiveRoutes from './routes/interviewLive.routes.js';
 import { errorHandler } from './middleware/errorHandler.js';
 
 const app = express();
@@ -29,6 +30,7 @@ app.get('/api/health', (req, res) => {
 // Mount modular API routes
 app.use('/api/auth', authRoutes);
 app.use('/api/candidate', candidateRoutes);
+app.use('/api/interviews', interviewLiveRoutes);
 app.use('/api', recruiterRoutes);
 
 // Catch 404 for unmapped routes

@@ -31,8 +31,10 @@ import {
   User,
   HelpCircle,
   Clock,
-  Building
+  Building,
+  Radio
 } from 'lucide-react';
+import RecruiterObserverPanel from '../components/RecruiterObserverPanel.jsx';
 
 export const InterviewDetailPage = () => {
   const { id } = useParams();
@@ -754,6 +756,18 @@ export const InterviewDetailPage = () => {
                   {planSections.length}
                 </span>
               )}
+            </button>
+
+            <button
+              onClick={() => setActiveTab('live')}
+              className={`py-3 px-4 font-semibold text-xs border-b-2 transition-all cursor-pointer flex items-center gap-2 ${
+                activeTab === 'live'
+                  ? 'border-emerald-500 text-white bg-emerald-500/10'
+                  : 'border-transparent text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              <Radio className="w-4 h-4 text-emerald-400 animate-pulse" />
+              <span>Live Observer</span>
             </button>
           </div>
 
@@ -1533,6 +1547,14 @@ export const InterviewDetailPage = () => {
                 </div>
               )}
             </div>
+          )}
+
+          {/* TAB 5: RECRUITER REAL-TIME LIVE OBSERVER */}
+          {activeTab === 'live' && (
+            <RecruiterObserverPanel
+              interviewId={id}
+              onInterviewEnded={() => fetchAnalysis(false)}
+            />
           )}
         </section>
       </main>
