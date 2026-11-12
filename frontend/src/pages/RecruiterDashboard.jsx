@@ -18,7 +18,8 @@ import {
   CalendarDays,
   User,
   RefreshCw,
-  FileText
+  FileText,
+  Award
 } from 'lucide-react';
 
 export const RecruiterDashboard = () => {
@@ -380,6 +381,17 @@ export const RecruiterDashboard = () => {
 
                       {/* Right: Actions */}
                       <div className="flex items-center flex-wrap gap-2.5">
+                        {/* View Assessment Report (if completed or partial) */}
+                        {['completed', 'partial'].includes(interview.status) && (
+                          <Link
+                            to={`/recruiter/interviews/${interview._id}?tab=report`}
+                            className="py-2 px-3.5 rounded-xl bg-emerald-600/20 hover:bg-emerald-600/30 border border-emerald-500/40 text-emerald-300 hover:text-white text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer shadow-sm shadow-emerald-500/10"
+                          >
+                            <Award className="w-3.5 h-3.5 text-emerald-400" />
+                            <span>Evaluation Report</span>
+                          </Link>
+                        )}
+
                         {/* Phase 2: Analyze & Plan */}
                         <Link
                           to={`/recruiter/interviews/${interview._id}`}

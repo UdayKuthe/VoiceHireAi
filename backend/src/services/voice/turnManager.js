@@ -17,7 +17,7 @@ export class TurnManager extends EventEmitter {
     super();
     this.noiseThresholdChars = options.noiseThresholdChars || 3;
     this.bargeInThresholdMs = options.bargeInThresholdMs || 400;
-    this.utteranceSilenceTimeoutMs = options.utteranceSilenceTimeoutMs || 1200; // D2
+    this.utteranceSilenceTimeoutMs = options.utteranceSilenceTimeoutMs || 2800; // Increased break time by +1.6s for candidate thinking pauses
 
     this.isBotSpeaking = false;
     this.speechStartTime = null;

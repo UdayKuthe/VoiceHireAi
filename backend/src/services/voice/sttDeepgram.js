@@ -22,7 +22,7 @@ export class DeepgramLiveSTT extends EventEmitter {
     this.encoding = options.encoding || 'linear16';
     this.smartFormat = options.smartFormat !== false;
     this.interimResults = options.interimResults !== false;
-    this.utteranceEndMs = options.utteranceEndMs || 1200;
+    this.utteranceEndMs = options.utteranceEndMs || 2500;
     this.vadEvents = options.vadEvents !== false;
     this.endpointing = options.endpointing || 300;
 

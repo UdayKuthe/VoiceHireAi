@@ -48,7 +48,7 @@ export const env = {
   JWT_SECRET: process.env.JWT_SECRET || 'voicehire_default_dev_secret_key_12345',
   JWT_EXPIRES_IN: process.env.JWT_EXPIRES_IN || '7d',
   GOOGLE_GEMINI_API_KEY: process.env.GOOGLE_GEMINI_API_KEY || process.env.GEMINI_API_KEY || '',
-  GEMINI_MODEL: process.env.GEMINI_MODEL || 'gemini-3.8-flash',
+  GEMINI_MODEL: process.env.GEMINI_MODEL || 'gemini-3.5-flash-lite',
   GEMINI_FALLBACK_MODEL: process.env.GEMINI_FALLBACK_MODEL || 'gemini-3.5-flash-lite',
   GROQ_API_KEY: process.env.GROQ_API_KEY || '',
   GROQ_BASE_URL: process.env.GROQ_BASE_URL || 'https://api.groq.com/openai/v1',

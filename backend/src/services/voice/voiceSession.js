@@ -115,7 +115,7 @@ export class VoiceSession extends EventEmitter {
       encoding: 'linear16',
       smartFormat: true,
       interimResults: true,
-      utteranceEndMs: 1200
+      utteranceEndMs: 2500
     });
 
     this.tts = new DeepgramTTS({
@@ -127,7 +127,7 @@ export class VoiceSession extends EventEmitter {
     this.turnManager = new TurnManager({
       noiseThresholdChars: 3,
       bargeInThresholdMs: 400,
-      utteranceSilenceTimeoutMs: 1200
+      utteranceSilenceTimeoutMs: 2800 // +1.6s break time for candidate thinking pauses
     });
 
     this.setupTurnManagerEvents();
@@ -158,7 +158,11 @@ export class VoiceSession extends EventEmitter {
     });
     if (this.isDisposed) return this;
 
-    // 6. Ask First Question
+    // 6. Give candidate WebRTC client a 1200ms grace window to complete track subscription
+    await new Promise((resolve) => setTimeout(resolve, 1200));
+    if (this.isDisposed) return this;
+
+    // 7. Ask First Question
     await this.progressToNextTurn();
 
     return this;
@@ -499,6 +503,10 @@ export class VoiceSession extends EventEmitter {
           console.warn(`[VoiceSession:${this.interviewId}] Handled TTS caption fallback.`);
         }
       }
+      // 250ms echo absorption tail to prevent room reverberation from triggering candidate speech
+      if (this.isBotSpeaking && !this.isDisposed) {
+        await new Promise((r) => setTimeout(r, 250));
+      }
     } catch (err) {
       console.warn(`[VoiceSession:${this.interviewId}] TTS playback warning: ${err.message}`);
     } finally {
@@ -518,12 +526,16 @@ export class VoiceSession extends EventEmitter {
 
   /**
    * Writes 24kHz linear16 PCM buffer in 20ms frames to LiveKit AudioSource
+   * Paced at true real-time 20ms intervals so audio streams at natural speech speed
    */
   async playPcmToAudioSource(pcmBuffer) {
     if (!this.audioSource || !pcmBuffer || pcmBuffer.length === 0 || this.isDisposed) return;
 
     const frameBytes = 960; // 20ms at 24000 Hz, 1 channel, 16-bit
     const samplesPerChannel = 480;
+    const frameIntervalMs = 20;
+
+    let nextTick = Date.now();
 
     for (let offset = 0; offset < pcmBuffer.length; offset += frameBytes) {
       if (!this.isBotSpeaking || this.isDisposed) break;
@@ -541,6 +553,12 @@ export class VoiceSession extends EventEmitter {
       } catch (err) {
         // Break cleanly if room/track closed
         break;
+      }
+
+      nextTick += frameIntervalMs;
+      const delay = nextTick - Date.now();
+      if (delay > 0) {
+        await new Promise((resolve) => setTimeout(resolve, delay));
       }
     }
   }

@@ -291,7 +291,9 @@ export const getAnalysis = async (req, res, next) => {
       mapping,
       plan,
       experienceLevel: interview.experienceLevel || resume?.data?.experienceSummary?.experienceLevel || '',
-      analysisStatus: interview.analysisStatus || 'none'
+      analysisStatus: interview.analysisStatus || 'none',
+      interviewStatus: interview.status,
+      interviewTitle: interview.title
     });
   } catch (error) {
     next(error);

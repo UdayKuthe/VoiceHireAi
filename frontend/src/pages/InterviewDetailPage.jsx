@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { useParams, useNavigate, Link } from 'react-router-dom';
+import { useParams, useNavigate, Link, useSearchParams } from 'react-router-dom';
 import { api } from '../services/api.js';
 import {
   FileText,
@@ -32,15 +32,18 @@ import {
   HelpCircle,
   Clock,
   Building,
-  Radio
+  Radio,
+  Award
 } from 'lucide-react';
 import RecruiterObserverPanel from '../components/RecruiterObserverPanel.jsx';
+import AssessmentReportView from '../components/AssessmentReportView.jsx';
 
 export const InterviewDetailPage = () => {
   const { id } = useParams();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
 
-  const [activeTab, setActiveTab] = useState('resume'); // resume | jd | mapping | plan
+  const [activeTab, setActiveTab] = useState(searchParams.get('tab') || 'resume'); // resume | jd | mapping | plan | live | report
   const [analysis, setAnalysis] = useState(null);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState('');
@@ -768,6 +771,23 @@ export const InterviewDetailPage = () => {
             >
               <Radio className="w-4 h-4 text-emerald-400 animate-pulse" />
               <span>Live Observer</span>
+            </button>
+
+            <button
+              onClick={() => setActiveTab('report')}
+              className={`py-3 px-4 font-semibold text-xs border-b-2 transition-all cursor-pointer flex items-center gap-2 ${
+                activeTab === 'report'
+                  ? 'border-indigo-500 text-white bg-indigo-500/10'
+                  : 'border-transparent text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              <Award className="w-4 h-4 text-indigo-400" />
+              <span>Assessment Report</span>
+              {['completed', 'partial'].includes(analysis?.interviewStatus) && (
+                <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-emerald-950 text-emerald-400 border border-emerald-500/30">
+                  Ready ✓
+                </span>
+              )}
             </button>
           </div>
 
@@ -1553,8 +1573,16 @@ export const InterviewDetailPage = () => {
           {activeTab === 'live' && (
             <RecruiterObserverPanel
               interviewId={id}
-              onInterviewEnded={() => fetchAnalysis(false)}
+              onInterviewEnded={() => {
+                fetchAnalysis(false);
+                setActiveTab('report');
+              }}
             />
+          )}
+
+          {/* TAB 6: ASSESSMENT REPORT & EVALUATION */}
+          {activeTab === 'report' && (
+            <AssessmentReportView interviewId={id} />
           )}
         </section>
       </main>

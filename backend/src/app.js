@@ -18,6 +18,22 @@ app.use(
 
 app.use(express.json());
 
+// Request logging middleware for terminal visibility on EVERY API call
+app.use((req, res, next) => {
+  const start = Date.now();
+  const { method, originalUrl } = req;
+  const timestamp = new Date().toLocaleTimeString();
+
+  res.on('finish', () => {
+    const duration = Date.now() - start;
+    const status = res.statusCode;
+    const color = status >= 500 ? '\x1b[31m' : status >= 400 ? '\x1b[33m' : status >= 300 ? '\x1b[36m' : '\x1b[32m';
+    console.log(`[HTTP API] ${timestamp} | ${method.padEnd(6)} ${originalUrl.padEnd(35)} | Status: ${color}${status}\x1b[0m | Duration: ${duration}ms`);
+  });
+
+  next();
+});
+
 // Health check endpoint
 app.get('/api/health', (req, res) => {
   res.status(200).json({

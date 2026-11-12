@@ -6,6 +6,7 @@ import { AssessmentReport } from '../models/AssessmentReport.js';
 import { RedisStateManager } from '../services/redisState.service.js';
 import { finalizeInterview } from '../services/finalizeInterview.service.js';
 import { createOrGetVoiceSession, disposeVoiceSession } from '../services/voice/voiceSession.js';
+import { computeRecommendation } from '../services/evaluationRecommendation.service.js';
 
 /**
  * Middleware: Verifies interview existence and user ownership
@@ -356,7 +357,10 @@ export const getInterviewReport = async (req, res) => {
       });
     }
 
-    const report = await AssessmentReport.findOne({ interviewId: interview._id });
+    const report = await AssessmentReport.findOne({ interviewId: interview._id })
+      .populate('candidateId', 'name email role')
+      .populate('interviewId', 'title status scheduledAt');
+
     if (!report) {
       return res.status(404).json({
         error: 'Report Not Found',
@@ -365,9 +369,16 @@ export const getInterviewReport = async (req, res) => {
       });
     }
 
+    const reportObj = report.toObject();
+
+    // Ensure recommendation is present (calculate dynamically if missing from legacy records)
+    if (!reportObj.recommendation || !reportObj.recommendation.decision) {
+      reportObj.recommendation = computeRecommendation(reportObj);
+    }
+
     return res.status(200).json({
       success: true,
-      report
+      report: reportObj
     });
   } catch (err) {
     return res.status(500).json({

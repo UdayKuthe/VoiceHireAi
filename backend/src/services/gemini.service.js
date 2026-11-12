@@ -524,61 +524,72 @@ export class GeminiService {
       return schema ? schema.parse(dynamicData) : dynamicData;
     }
 
-    // Default to gemini-3.8-flash (standard 2026 model)
-    const model = env.GEMINI_MODEL || 'gemini-3.8-flash';
+    const candidateModels = [
+      env.GEMINI_MODEL,
+      'gemini-3.5-flash-lite',
+      'gemini-flash-lite-latest',
+      'gemini-3.5-flash'
+    ].filter(Boolean);
+    const modelsToTry = [...new Set(candidateModels)];
+
     let lastError = null;
 
-    for (let attempt = 0; attempt <= maxRetries; attempt++) {
-      try {
-        const response = await ai.models.generateContent({
-          model,
-          contents: [
-            {
-              role: 'user',
-              parts: [
-                { text: prompt },
-                {
-                  inlineData: {
-                    data: base64Data,
-                    mimeType: 'application/pdf'
+    for (const model of modelsToTry) {
+      for (let attempt = 0; attempt <= maxRetries; attempt++) {
+        const startTime = Date.now();
+        console.log(`[Gemini API] >> Calling Gemini (${model}) | Task: PDF Extraction (${fileName || filePath}) | Attempt ${attempt + 1}/${maxRetries + 1}`);
+
+        try {
+          const response = await ai.models.generateContent({
+            model,
+            contents: [
+              {
+                role: 'user',
+                parts: [
+                  { text: prompt },
+                  {
+                    inlineData: {
+                      data: base64Data,
+                      mimeType: 'application/pdf'
+                    }
                   }
-                }
-              ]
+                ]
+              }
+            ],
+            config: {
+              responseMimeType: 'application/json'
             }
-          ],
-          config: {
-            responseMimeType: 'application/json'
+          });
+
+          const latency = Date.now() - startTime;
+          const rawText = response.text;
+          if (!rawText) {
+            throw new Error('Empty response received from Gemini.');
           }
-        });
 
-        const rawText = response.text;
-        if (!rawText) {
-          throw new Error('Empty response received from Gemini.');
-        }
+          const parsedJson = JSON.parse(rawText);
+          console.log(`[Gemini API] << SUCCESS (${model}) | Latency: ${latency}ms | Extracted keys: ${Object.keys(parsedJson).join(', ')}`);
 
-        const parsedJson = JSON.parse(rawText);
-        if (schema) {
-          return schema.parse(parsedJson);
-        }
+          if (schema) {
+            return schema.parse(parsedJson);
+          }
 
-        return parsedJson;
-      } catch (err) {
-        lastError = err;
-        console.warn(`[GeminiService] Attempt ${attempt + 1}/${maxRetries + 1} failed (status: ${err.status || 'N/A'}): ${err.message}`);
+          return parsedJson;
+        } catch (err) {
+          lastError = err;
+          const latency = Date.now() - startTime;
+          console.warn(`[Gemini API] !! FAILED (${model}) | Latency: ${latency}ms | Status: ${err.status || 'N/A'} | Error: ${err.message}`);
 
-        // If Google Cloud project access is denied (403), unauthorized (401), or model retired (404)
-        if (err.status === 403 || err.status === 401 || err.status === 404) {
-          console.warn(`[GeminiService] Google API returned ${err.status}. Intelligently extracting real document data from uploaded PDF.`);
-          const dynamicData = this.getDynamicFallback({ prompt, rawText: rawPdfText, fileName });
-          if (schema) return schema.parse(dynamicData);
-          return dynamicData;
-        }
+          // If Google Cloud project access is denied (403), unauthorized (401), or not found (404), break to next model
+          if (err.status === 403 || err.status === 401 || err.status === 404) {
+            break;
+          }
 
-        // For 503 (overloaded) or 429 (rate limit), use exponential backoff
-        if (attempt < maxRetries) {
-          const backoffMs = (err.status === 503 || err.status === 429) ? 2000 * (attempt + 1) : 1000;
-          console.log(`[GeminiService] Retrying in ${backoffMs}ms...`);
-          await new Promise((r) => setTimeout(r, backoffMs));
+          if (attempt < maxRetries) {
+            const backoffMs = (err.status === 503 || err.status === 429) ? 1500 * (attempt + 1) : 1000;
+            console.log(`[Gemini API] Spikes in demand (${err.status || 'N/A'}). Retrying ${model} in ${backoffMs}ms (attempt ${attempt + 2}/${maxRetries + 1})...`);
+            await new Promise((r) => setTimeout(r, backoffMs));
+          }
         }
       }
     }
@@ -614,45 +625,58 @@ export class GeminiService {
       return schema ? schema.parse(dynamicData) : dynamicData;
     }
 
-    const model = env.GEMINI_MODEL || 'gemini-3.8-flash';
+    const candidateModels = [
+      env.GEMINI_MODEL,
+      'gemini-3.5-flash-lite',
+      'gemini-flash-lite-latest',
+      'gemini-3.5-flash'
+    ].filter(Boolean);
+    const modelsToTry = [...new Set(candidateModels)];
+
     let lastError = null;
 
-    for (let attempt = 0; attempt <= maxRetries; attempt++) {
-      try {
-        const response = await ai.models.generateContent({
-          model,
-          contents: prompt,
-          config: {
-            responseMimeType: 'application/json'
+    for (const model of modelsToTry) {
+      for (let attempt = 0; attempt <= maxRetries; attempt++) {
+        const startTime = Date.now();
+        console.log(`[Gemini API] >> Calling Gemini (${model}) | Task: Text Generation | Attempt ${attempt + 1}/${maxRetries + 1}`);
+
+        try {
+          const response = await ai.models.generateContent({
+            model,
+            contents: prompt,
+            config: {
+              responseMimeType: 'application/json'
+            }
+          });
+
+          const latency = Date.now() - startTime;
+          const rawText = response.text;
+          if (!rawText) {
+            throw new Error('Empty response received from Gemini.');
           }
-        });
 
-        const rawText = response.text;
-        if (!rawText) {
-          throw new Error('Empty response received from Gemini.');
-        }
+          const parsedJson = JSON.parse(rawText);
+          console.log(`[Gemini API] << SUCCESS (${model}) | Latency: ${latency}ms | Generated keys: ${Object.keys(parsedJson).join(', ')}`);
 
-        const parsedJson = JSON.parse(rawText);
-        if (schema) {
-          return schema.parse(parsedJson);
-        }
+          if (schema) {
+            return schema.parse(parsedJson);
+          }
 
-        return parsedJson;
-      } catch (err) {
-        lastError = err;
-        console.warn(`[GeminiService Text] Attempt ${attempt + 1}/${maxRetries + 1} failed (status: ${err.status || 'N/A'}): ${err.message}`);
+          return parsedJson;
+        } catch (err) {
+          lastError = err;
+          const latency = Date.now() - startTime;
+          console.warn(`[Gemini API] !! FAILED (${model}) | Latency: ${latency}ms | Status: ${err.status || 'N/A'} | Error: ${err.message}`);
 
-        if (err.status === 403 || err.status === 401 || err.status === 404) {
-          console.warn(`[GeminiService Text] Google API returned ${err.status}. Dynamically generating structured output from prompt context.`);
-          const dynamicData = this.getDynamicFallback({ prompt });
-          if (schema) return schema.parse(dynamicData);
-          return dynamicData;
-        }
+          if (err.status === 403 || err.status === 401 || err.status === 404) {
+            break;
+          }
 
-        if (attempt < maxRetries) {
-          const backoffMs = (err.status === 503 || err.status === 429) ? 2000 * (attempt + 1) : 1000;
-          console.log(`[GeminiService Text] Retrying in ${backoffMs}ms...`);
-          await new Promise((r) => setTimeout(r, backoffMs));
+          if (attempt < maxRetries) {
+            const backoffMs = (err.status === 503 || err.status === 429) ? 1500 * (attempt + 1) : 1000;
+            console.log(`[Gemini API] Spikes in demand (${err.status || 'N/A'}). Retrying ${model} in ${backoffMs}ms (attempt ${attempt + 2}/${maxRetries + 1})...`);
+            await new Promise((r) => setTimeout(r, backoffMs));
+          }
         }
       }
     }

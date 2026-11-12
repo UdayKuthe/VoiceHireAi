@@ -114,6 +114,10 @@ const assessmentReportSchema = new mongoose.Schema(
       type: mongoose.Schema.Types.Mixed,
       default: null
     },
+    recommendation: {
+      type: mongoose.Schema.Types.Mixed,
+      default: null
+    },
     difficultyTrail: [difficultyTrailItemSchema],
     status: {
       type: String,

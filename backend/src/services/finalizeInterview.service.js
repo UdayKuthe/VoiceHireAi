@@ -19,6 +19,7 @@ import { RedisStateManager } from './redisState.service.js';
 import { generateReportSummary, generateDeterministicSummary } from './ai/reportSummary.service.js';
 import { analyzeAnswer, applyAnalysisToState } from './ai/answerAnalysis.service.js';
 import { disposeVoiceSession } from './voice/voiceSession.js';
+import { computeRecommendation } from './evaluationRecommendation.service.js';
 
 export async function finalizeInterview(interviewId, options = {}) {
   const {
@@ -191,7 +192,18 @@ export async function finalizeInterview(interviewId, options = {}) {
     }
   }
 
-  // 7. Write AssessmentReport in MongoDB
+  // 7. Compute Objective Recommendation
+  const recommendation = computeRecommendation({
+    skillsAssessed,
+    claims,
+    remainingGaps,
+    questionAnswerHistory,
+    coverage,
+    durationMs,
+    partial: determinedPartial
+  });
+
+  // 8. Write AssessmentReport in MongoDB
   const report = await AssessmentReport.findOneAndUpdate(
     { interviewId: interview._id },
     {
@@ -207,13 +219,14 @@ export async function finalizeInterview(interviewId, options = {}) {
       durationMs,
       endedBy,
       partial: determinedPartial,
+      recommendation,
       generatedAt: new Date(),
       status: 'completed'
     },
     { upsert: true, returnDocument: 'after', setDefaultsOnInsert: true }
   );
 
-  // 8. Update Interview in MongoDB
+  // 9. Update Interview in MongoDB
   interview.status = finalStatus;
   interview.live = interview.live || {};
   interview.live.endedAt = new Date();

@@ -333,9 +333,11 @@ async function runStepS9Tests() {
       bargeInDetected = true;
     });
 
-    // Cancel previous playback and simulate active bot speaking
+    // Cancel previous playback and wait for active speech loop to completely exit
+    botSession.isBotSpeaking = false;
     botSession.tts?.cancel?.();
-    await new Promise((r) => setTimeout(r, 100));
+    await new Promise((r) => setTimeout(r, 400));
+
     botSession.isBotSpeaking = true;
     botSession.turnManager.setBotSpeaking(true);
 

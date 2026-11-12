@@ -107,6 +107,9 @@ export const LiveInterviewPage = () => {
       room.on(RoomEvent.TrackSubscribed, (track) => {
         if (track.kind === 'audio' && audioElRef.current) {
           track.attach(audioElRef.current);
+          audioElRef.current.play().catch((err) => {
+            console.warn('Audio playback notice:', err?.message);
+          });
         }
       });
 
@@ -157,6 +160,16 @@ export const LiveInterviewPage = () => {
 
       // Crucial: Unlock browser audio playback via explicit user gesture
       await room.startAudio();
+
+      // Ensure any audio track already subscribed from the bot is attached and playing
+      room.remoteParticipants.forEach((participant) => {
+        participant.trackPublications.forEach((pub) => {
+          if (pub.isSubscribed && pub.track?.kind === 'audio' && audioElRef.current) {
+            pub.track.attach(audioElRef.current);
+            audioElRef.current.play().catch(() => {});
+          }
+        });
+      });
 
       // Create and publish candidate microphone track
       const localTrack = await createLocalAudioTrack({
